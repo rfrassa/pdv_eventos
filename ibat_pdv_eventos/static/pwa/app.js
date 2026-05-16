@@ -449,7 +449,15 @@ function agregarPago() {
     const recibidoStr = document.getElementById('pay-recibido-input').value.trim();
     const recibido = recibidoStr ? parseFloat(recibidoStr) : null;
 
-    if (recibido !== null) {
+    if (state.metodoSeleccionado === 'EF') {
+        const efectivoRecibido = recibido || montoIngresado;
+        if (efectivoRecibido < montoIngresado) {
+            showNotification('El monto recibido no puede ser menor al monto', 'error');
+            return;
+        }
+        pago.monto = Math.round(Math.min(montoIngresado, remainder) * 100) / 100;
+        pago.monto_recibido = Math.round(efectivoRecibido * 100) / 100;
+    } else if (recibido !== null) {
         if (recibido < 0.01) {
             showNotification('Ingresá un monto recibido válido', 'error');
             return;

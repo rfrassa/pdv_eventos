@@ -1,4 +1,5 @@
 import os
+import logging
 from django.conf import settings
 from django.db.models import F
 from django.shortcuts import get_object_or_404
@@ -9,6 +10,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import Evento, Pedido, Producto, PuntoVenta
+
+logger = logging.getLogger(__name__)
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -81,7 +84,8 @@ def pedido_create(request):
                 service.print_ticket(pedido)
                 Pedido.objects.filter(id=pedido.id).update(veces_impreso=F('veces_impreso') + 1)
                 impreso = True
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Error imprimiendo pedido #{pedido.id}: {e}")
                 impreso = False
         else:
             try:
