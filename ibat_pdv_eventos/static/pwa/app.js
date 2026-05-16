@@ -444,11 +444,6 @@ function agregarPago() {
     const recibidoStr = document.getElementById('pay-recibido-input').value.trim();
     const recibido = recibidoStr ? parseFloat(recibidoStr) : null;
 
-    if (montoIngresado > remainder + 0.005) {
-        showNotification('El monto supera el restante', 'error');
-        return;
-    }
-
     if (recibido !== null) {
         if (recibido < 0.01) {
             showNotification('Ingresá un monto recibido válido', 'error');
@@ -461,6 +456,10 @@ function agregarPago() {
         pago.monto = Math.round(Math.min(montoIngresado, remainder) * 100) / 100;
         pago.monto_recibido = Math.round(recibido * 100) / 100;
     } else {
+        if (montoIngresado > remainder + 0.005) {
+            showNotification('El monto supera el restante', 'error');
+            return;
+        }
         pago.monto = Math.round(montoIngresado * 100) / 100;
     }
 
@@ -516,21 +515,34 @@ async function confirmarPago() {
             nota: l.nota || '',
         })),
         pagos: state.pagos,
+        imprimir: true,
+        printer_name: state.printerName || undefined,
     };
 
+    const btn = document.getElementById('btn-confirm-payment');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+
     try {
-        const pedidoCreado = await apiFetch('/api/pedidos/', {
+        const res = await apiFetch('/api/pedidos/', {
             method: 'POST',
             body: JSON.stringify(payload),
         });
-        showNotification('Pago confirmado.');
+        if (res.impreso) {
+            showNotification('Pago confirmado. Ticket enviado a impresora.');
+        } else {
+            showNotification('Pago confirmado. (Error al imprimir)', 'warning');
+        }
         cerrarPago();
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
+        actualizarBadgePendientes();
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 

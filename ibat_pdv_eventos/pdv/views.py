@@ -3,6 +3,7 @@ from django.conf import settings
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -18,6 +19,7 @@ from .serializers import (
 )
 
 
+@csrf_exempt
 @api_view(['GET', 'POST'])
 def productos_list(request):
     evento_activo = get_object_or_404(Evento, activo=True)
@@ -43,6 +45,7 @@ def productos_list(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
 @api_view(['GET', 'PATCH', 'DELETE'])
 def producto_detail(request, producto_id):
     producto = get_object_or_404(Producto, id=producto_id)
@@ -63,17 +66,32 @@ def producto_detail(request, producto_id):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@csrf_exempt
 @api_view(['POST'])
 def pedido_create(request):
     serializer = PedidoCreateSerializer(data=request.data)
     if serializer.is_valid():
         pedido = serializer.save()
-        try:
-            from .utils.ticket_handler import imprimir_ticket
-            imprimir_ticket(pedido)
-        except Exception:
-            pass
-        return Response(PedidoDetailSerializer(pedido).data, status=status.HTTP_201_CREATED)
+        impreso = False
+        if request.data.get('imprimir', False):
+            try:
+                from .utils.local_printer import LocalPrinterService
+                printer_name = request.data.get('printer_name')
+                service = LocalPrinterService(printer_name=printer_name)
+                service.print_ticket(pedido)
+                Pedido.objects.filter(id=pedido.id).update(veces_impreso=F('veces_impreso') + 1)
+                impreso = True
+            except Exception:
+                impreso = False
+        else:
+            try:
+                from .utils.ticket_handler import imprimir_ticket
+                imprimir_ticket(pedido)
+            except Exception:
+                pass
+        data = PedidoDetailSerializer(pedido).data
+        data['impreso'] = impreso
+        return Response(data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -117,6 +135,7 @@ def pedidos_historial(request):
     })
 
 
+@csrf_exempt
 @api_view(['GET', 'PATCH', 'DELETE'])
 def pedido_detail(request, pedido_id):
     if request.method == 'GET':
@@ -140,6 +159,7 @@ def pedido_detail(request, pedido_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
 @api_view(['POST'])
 def pedido_reimprimir(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
@@ -152,6 +172,7 @@ def pedido_reimprimir(request, pedido_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@csrf_exempt
 @api_view(['POST'])
 def cierre_caja(request):
     evento = get_object_or_404(Evento, activo=True)
@@ -193,6 +214,7 @@ def cierre_caja(request):
     return Response(resumen)
 
 
+@csrf_exempt
 @api_view(['POST'])
 def pedido_imprimir_local(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
