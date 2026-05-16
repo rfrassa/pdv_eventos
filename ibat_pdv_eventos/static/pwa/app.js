@@ -21,6 +21,7 @@ let state = {
     metodoSeleccionado: null,
     printerName: localStorage.getItem('pdv_printer') || '',
     impresoras: [],
+    procesando: false,
 };
 
 async function apiFetch(url, options = {}) {
@@ -257,6 +258,7 @@ function nuevoTicket() {
 
 // --- GUARDAR PEDIDO ---
 async function guardarPedido() {
+    if (state.procesando) return;
     if (state.ticket.length === 0) {
         showNotification('El ticket está vacío', 'error');
         return;
@@ -284,6 +286,7 @@ async function guardarPedido() {
         pagos: [],
     };
 
+    state.procesando = true;
     try {
         const pedido = state.pedidoEditando
             ? await apiFetch('/api/pedidos/' + state.pedidoEditando + '/', {
@@ -298,9 +301,11 @@ async function guardarPedido() {
         document.getElementById('btn-guardar-label').textContent = 'GUARDAR';
         state.ticket = [];
         state.pedidoEditando = null;
+        state.procesando = false;
         renderTicket();
         actualizarBadgePendientes();
     } catch (e) {
+        state.procesando = false;
         showNotification('Error al guardar: ' + e.message, 'error');
     }
 }
@@ -489,6 +494,7 @@ function limpiarPagos() {
 }
 
 async function confirmarPago() {
+    if (state.procesando) return;
     const remainder = getRemainder();
     if (Math.abs(remainder) > 0.01) {
         showNotification('Falta cubrir el total', 'error');
@@ -523,6 +529,7 @@ async function confirmarPago() {
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Procesando...';
+    state.procesando = true;
 
     try {
         const res = await apiFetch('/api/pedidos/', {
@@ -534,12 +541,14 @@ async function confirmarPago() {
         } else {
             showNotification('Pago confirmado. (Error al imprimir)', 'warning');
         }
+        state.procesando = false;
         cerrarPago();
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
         actualizarBadgePendientes();
     } catch (e) {
+        state.procesando = false;
         showNotification('Error al procesar pago: ' + e.message, 'error');
         btn.disabled = false;
         btn.textContent = originalText;
@@ -594,14 +603,53 @@ async function toggleOrders() {
     }
 }
 
+async function reloadOrders() {
+    const overlay = document.getElementById('orders-overlay');
+    if (!overlay.classList.contains('open')) return;
+    try {
+        const pedidos = await apiFetch('/api/pedidos/abiertos/?punto_venta_id=' + state.pdvActual.id);
+        const list = document.getElementById('orders-list');
+        if (pedidos.length === 0) {
+            list.innerHTML = '<div class="empty-state">No hay pedidos pendientes</div>';
+            return;
+        }
+        let html = '';
+        pedidos.forEach(p => {
+            html += `
+                <div class="order-card">
+                    <div class="order-card-info">
+                        <div class="order-card-id">Pedido #${p.id}</div>
+                        <div class="order-card-total">${formatPrice(p.total_final)}</div>
+                        <div class="order-card-time">${new Date(p.creado).toLocaleString()}</div>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn-resume-order" onclick="retomarPedido(${p.id})">Retomar</button>
+                        <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedido(${p.id})">Eliminar</button>
+                    </div>
+                </div>
+            `;
+        });
+        list.innerHTML = html;
+    } catch (e) {
+        showNotification('Error al cargar pedidos: ' + e.message, 'error');
+    }
+}
+
 async function eliminarPedido(id) {
     if (!confirm('¿Eliminar pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        toggleOrders();
+        await reloadOrders();
+        actualizarBadgePendientes();
     } catch (e) {
-        showNotification('Error al eliminar: ' + e.message, 'error');
+        if (e.message.includes('No Pedido matches') || e.message.includes('404')) {
+            showNotification('Pedido #' + id + ' ya fue eliminado');
+            await reloadOrders();
+            actualizarBadgePendientes();
+        } else {
+            showNotification('Error al eliminar: ' + e.message, 'error');
+        }
     }
 }
 
@@ -666,14 +714,53 @@ async function toggleHistorial() {
     }
 }
 
+async function reloadHistorial() {
+    const overlay = document.getElementById('historial-overlay');
+    if (!overlay.classList.contains('open')) return;
+    try {
+        const data = await apiFetch('/api/pedidos/historial/?punto_venta_id=' + state.pdvActual.id + '&limite=100');
+        const list = document.getElementById('historial-list');
+        if (data.resultados.length === 0) {
+            list.innerHTML = '<div class="empty-state">No hay pedidos en el historial</div>';
+            return;
+        }
+        let html = '';
+        data.resultados.forEach(p => {
+            const estado = p.cerrado ? 'Cerrado' : 'Abierto';
+            html += `
+                <div class="order-card">
+                    <div class="order-card-info">
+                        <div class="order-card-id">Pedido #${p.id} <span style="font-size:0.7rem;color:${p.cerrado ? 'var(--success)' : 'var(--warning)'}">(${estado})</span></div>
+                        <div class="order-card-total">${formatPrice(p.total_final)}</div>
+                        <div class="order-card-time">${new Date(p.creado).toLocaleString()} - ${p.punto_venta_nombre}</div>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn-resume-order" onclick="toggleDetalle(${p.id})">Ver</button>
+                        <button class="btn-resume-order" onclick="imprimirEnPC(${p.id})">Imprimir${p.veces_impreso ? ' (' + p.veces_impreso + ')' : ''}</button>
+                        <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedidoHistorial(${p.id})">Eliminar</button>
+                    </div>
+                </div>
+            `;
+        });
+        list.innerHTML = html;
+    } catch (e) {
+        showNotification('Error al cargar historial: ' + e.message, 'error');
+    }
+}
+
 async function eliminarPedidoHistorial(id) {
     if (!confirm('¿Eliminar permanentemente el pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        toggleHistorial();
+        await reloadHistorial();
     } catch (e) {
-        showNotification('Error al eliminar: ' + e.message, 'error');
+        if (e.message.includes('No Pedido matches') || e.message.includes('404')) {
+            showNotification('Pedido #' + id + ' ya fue eliminado');
+            await reloadHistorial();
+        } else {
+            showNotification('Error al eliminar: ' + e.message, 'error');
+        }
     }
 }
 
