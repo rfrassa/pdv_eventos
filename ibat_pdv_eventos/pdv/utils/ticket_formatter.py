@@ -33,7 +33,7 @@ class TicketFormatter:
             lineas.append(linea_actual)
         return lineas
 
-    def formatear(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
+    def formatear(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None, mostrar_pagos=True):
         lineas = []
         evento = pedido.punto_venta.evento
         lineas.append(self._center('CENTRO DE ESTUDIANTES'))
@@ -91,18 +91,22 @@ class TicketFormatter:
             tlinea = f'* TOTAL *  * ${pedido.total_final:.2f} *'
             lineas.append(tlinea.rjust(self.ancho))
 
-        lineas.append(self._linea_sep('='))
-        lineas.append('')
-        lineas.append(self._center('-- PAGOS --'))
+        if mostrar_pagos:
+            lineas.append(self._linea_sep('='))
+            lineas.append('')
+            lineas.append(self._center('-- PAGOS --'))
 
-        for pago in pedido.pagos.all():
-            if pago.metodo == 'EF' and pago.monto_recibido:
-                vuelto = pago.monto_recibido - pago.monto
-                lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
-                lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
-                lineas.append(self._left_right('  Vuelto', f"${vuelto:.2f}"))
-            else:
-                lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
+            for pago in pedido.pagos.all():
+                if pago.monto_recibido and pago.monto_recibido > pago.monto:
+                    vuelto = pago.monto_recibido - pago.monto
+                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
+                    lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
+                    lineas.append(self._left_right('  Vuelto', f"${vuelto:.2f}"))
+                elif pago.monto_recibido:
+                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
+                    lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
+                else:
+                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
 
         lineas.append(self._linea_sep('='))
         lineas.append('')

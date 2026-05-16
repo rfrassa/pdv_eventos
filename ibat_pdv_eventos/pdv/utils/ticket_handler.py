@@ -27,11 +27,13 @@ class TicketHandler:
         success = True
 
         if CAT_COMIDA in categorias and CAT_BEBIDA in categorias:
+            lineas = self.formatter.formatear(pedido, mostrar_pagos=True)
+            success = printer.print_ticket(lineas) and success
             for cat, etiqueta, suf in [(CAT_BEBIDA, 'BEBIDAS', 'B'), (CAT_COMIDA, 'COMIDAS', 'C')]:
-                lineas = self.formatter.formatear(pedido, categoria_nombre=cat, etiqueta=etiqueta, sufijo=suf)
+                lineas = self.formatter.formatear(pedido, categoria_nombre=cat, etiqueta=etiqueta, sufijo=suf, mostrar_pagos=False)
                 success = printer.print_ticket(lineas) and success
         else:
-            lineas = self.formatter.formatear(pedido)
+            lineas = self.formatter.formatear(pedido, mostrar_pagos=True)
             success = printer.print_ticket(lineas)
 
         if not success:

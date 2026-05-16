@@ -36,11 +36,12 @@ class ProductoWriteSerializer(serializers.ModelSerializer):
 
 class LineaPedidoSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source='producto.nombre', read_only=True)
+    categoria_nombre = serializers.CharField(source='producto.categoria.nombre', read_only=True)
     tasa_impuesto = serializers.DecimalField(source='producto.tasa_impuesto', max_digits=5, decimal_places=2, read_only=True)
 
     class Meta:
         model = LineaPedido
-        fields = ['id', 'producto', 'producto_nombre', 'cantidad', 'precio_unitario', 'nota', 'tasa_impuesto']
+        fields = ['id', 'producto', 'producto_nombre', 'categoria_nombre', 'cantidad', 'precio_unitario', 'nota', 'tasa_impuesto']
 
     def validate_cantidad(self, value):
         if value < 1:
@@ -59,6 +60,18 @@ class PagoSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError('El monto debe ser mayor a 0.')
         return value
+
+    def validate(self, data):
+        metodo = data.get('metodo')
+        monto = data.get('monto')
+        monto_recibido = data.get('monto_recibido')
+
+        if monto_recibido is not None and metodo == 'EF' and monto_recibido < monto:
+            raise serializers.ValidationError(
+                'El monto recibido no puede ser menor al monto para pagos en efectivo.'
+            )
+
+        return data
 
 
 class PuntoVentaSerializer(serializers.ModelSerializer):
@@ -99,7 +112,7 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
         pagos = data.get('pagos', [])
         if pagos:
             total_pagos = sum(p['monto'] for p in pagos)
-            if data['total_final'] != total_pagos:
+            if abs(float(data['total_final']) - float(total_pagos)) > 0.01:
                 raise serializers.ValidationError(
                     f'La suma de los pagos (${total_pagos:.2f}) debe ser igual al total final (${data["total_final"]:.2f}).'
                 )

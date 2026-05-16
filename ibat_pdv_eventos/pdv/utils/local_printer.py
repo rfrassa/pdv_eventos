@@ -14,7 +14,7 @@ CAT_COMIDA = 'Comidas'
 CAT_BEBIDA = 'Bebidas'
 
 
-def _generate_ticket_html(pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
+def _generate_ticket_html(pedido, categoria_nombre=None, etiqueta=None, sufijo=None, mostrar_pagos=True):
     evento = pedido.punto_venta.evento.nombre if hasattr(pedido.punto_venta, 'evento') else ''
     pdv = pedido.punto_venta.nombre
     fecha = pedido.creado.strftime('%d/%m/%Y %H:%M') if pedido.creado else ''
@@ -41,12 +41,15 @@ def _generate_ticket_html(pedido, categoria_nombre=None, etiqueta=None, sufijo=N
         return None
 
     pagos_html = ''
-    for p in pedido.pagos.all():
-        extra = ''
-        if p.metodo == 'EF' and p.monto_recibido:
-            vuelto = float(p.monto_recibido) - float(p.monto)
-            extra = f'<br><span style="font-size:12px;color:#666">Recibido: ${float(p.monto_recibido):.2f} | Vuelto: ${vuelto:.2f}</span>'
-        pagos_html += f'''
+    if mostrar_pagos:
+        for p in pedido.pagos.all():
+            extra = ''
+            if p.monto_recibido and float(p.monto_recibido) > float(p.monto):
+                vuelto = float(p.monto_recibido) - float(p.monto)
+                extra = f'<br><span style="font-size:12px;color:#666">Recibido: ${float(p.monto_recibido):.2f} | Vuelto: ${vuelto:.2f}</span>'
+            elif p.monto_recibido:
+                extra = f'<br><span style="font-size:12px;color:#666">Recibido: ${float(p.monto_recibido):.2f}</span>'
+            pagos_html += f'''
             <tr>
                 <td style="padding:4px 0;font-size:14px">{p.get_metodo_display()}{extra}</td>
                 <td style="padding:4px 0;font-size:14px;text-align:right">${float(p.monto):.2f}</td>
@@ -212,21 +215,21 @@ else {{ Write-Error "No printer found" }}
     def _categorias_en_pedido(self, pedido):
         return set(l.producto.categoria.nombre for l in pedido.lineas.all())
 
-    def _imprimir_html(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
+    def _imprimir_html(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None, mostrar_pagos=True):
         sistema = platform.system()
         is_wsl = _is_wsl()
         if sistema == 'Windows':
             from .ticket_formatter import TicketFormatter
             formatter = TicketFormatter()
-            lineas = formatter.formatear(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo)
+            lineas = formatter.formatear(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo, mostrar_pagos=mostrar_pagos)
             return self._print_windows(lineas)
         elif is_wsl:
-            html = _generate_ticket_html(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo)
+            html = _generate_ticket_html(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo, mostrar_pagos=mostrar_pagos)
             if html is None:
                 return None
             return self._print_windows_via_powershell(html, self.printer_name)
         else:
-            html = _generate_ticket_html(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo)
+            html = _generate_ticket_html(pedido, categoria_nombre=categoria_nombre, etiqueta=etiqueta, sufijo=sufijo, mostrar_pagos=mostrar_pagos)
             if html is None:
                 return None
             return self._print_linux(html)
@@ -236,12 +239,13 @@ else {{ Write-Error "No printer found" }}
         nombre = None
 
         if CAT_COMIDA in categorias and CAT_BEBIDA in categorias:
+            nombre = self._imprimir_html(pedido, mostrar_pagos=True)
             for cat, etiqueta, suf in [(CAT_BEBIDA, 'BEBIDAS', 'B'), (CAT_COMIDA, 'COMIDAS', 'C')]:
-                n = self._imprimir_html(pedido, categoria_nombre=cat, etiqueta=etiqueta, sufijo=suf)
+                n = self._imprimir_html(pedido, categoria_nombre=cat, etiqueta=etiqueta, sufijo=suf, mostrar_pagos=False)
                 if n:
                     nombre = n
         else:
-            nombre = self._imprimir_html(pedido)
+            nombre = self._imprimir_html(pedido, mostrar_pagos=True)
 
         if nombre:
             logger.info(f'Ticket #{pedido.id} enviado a impresora: {nombre}')

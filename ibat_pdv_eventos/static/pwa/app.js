@@ -362,7 +362,7 @@ function seleccionarMetodo(id) {
     document.getElementById('pay-input-label').textContent = metodo.label;
     document.getElementById('pay-amount-input').value = '';
     document.getElementById('pay-recibido-input').value = '';
-    document.getElementById('pay-recibido-input').parentElement.style.display = id === 'EF' ? 'block' : 'none';
+    document.getElementById('pay-recibido-input').parentElement.style.display = 'block';
     document.getElementById('payment-input-area').style.display = 'block';
     renderMetodosPago();
     actualizarInlineTotals();
@@ -402,10 +402,10 @@ function renderPagos() {
         const metodo = METODOS_PAGO.find(m => m.id === p.metodo);
         const label = metodo ? metodo.label : p.metodo;
         let extra = '';
-        if (p.metodo === 'EF' && p.monto_recibido && p.monto_recibido > p.monto) {
+        if (p.monto_recibido && p.monto_recibido > p.monto) {
             const vuelto = Math.round((p.monto_recibido - p.monto) * 100) / 100;
             extra = `<div style="font-size:0.85rem;color:var(--success);font-weight:600">Vuelto: ${formatPrice(vuelto)}</div>`;
-        } else if (p.metodo === 'EF' && p.monto_recibido) {
+        } else if (p.monto_recibido) {
             extra = `<div style="font-size:0.75rem;color:var(--text-light)">Recibido: ${formatPrice(p.monto_recibido)}</div>`;
         }
         html += `
@@ -441,24 +441,26 @@ function agregarPago() {
     const remainder = getRemainder();
     const pago = { metodo: state.metodoSeleccionado };
 
-    if (state.metodoSeleccionado === 'EF') {
-        const recibido = parseFloat(document.getElementById('pay-recibido-input').value) || montoIngresado;
+    const recibidoStr = document.getElementById('pay-recibido-input').value.trim();
+    const recibido = recibidoStr ? parseFloat(recibidoStr) : null;
+
+    if (montoIngresado > remainder + 0.005) {
+        showNotification('El monto supera el restante', 'error');
+        return;
+    }
+
+    if (recibido !== null) {
         if (recibido < 0.01) {
-            showNotification('Ingresá el efectivo recibido', 'error');
+            showNotification('Ingresá un monto recibido válido', 'error');
             return;
         }
         if (recibido < montoIngresado) {
-            showNotification('El efectivo recibido no puede ser menor al monto', 'error');
+            showNotification('El monto recibido no puede ser menor al monto', 'error');
             return;
         }
-        const montoPago = Math.min(montoIngresado, remainder);
-        pago.monto = Math.round(montoPago * 100) / 100;
+        pago.monto = Math.round(Math.min(montoIngresado, remainder) * 100) / 100;
         pago.monto_recibido = Math.round(recibido * 100) / 100;
     } else {
-        if (montoIngresado > remainder + 0.01) {
-            showNotification('El monto supera el restante', 'error');
-            return;
-        }
         pago.monto = Math.round(montoIngresado * 100) / 100;
     }
 
@@ -702,9 +704,11 @@ async function toggleDetalle(id) {
         let pagosHtml = '';
         p.pagos.forEach(pg => {
             let extra = '';
-            if (pg.metodo === 'EF' && pg.monto_recibido) {
+            if (pg.monto_recibido && parseFloat(pg.monto_recibido) > parseFloat(pg.monto)) {
                 const vuelto = parseFloat(pg.monto_recibido) - parseFloat(pg.monto);
                 extra = '<div class="detalle-pago-extra">Recibido: $' + parseFloat(pg.monto_recibido).toFixed(2) + ' | Vuelto: $' + vuelto.toFixed(2) + '</div>';
+            } else if (pg.monto_recibido) {
+                extra = '<div class="detalle-pago-extra">Recibido: $' + parseFloat(pg.monto_recibido).toFixed(2) + '</div>';
             }
             pagosHtml += `
                 <div class="detalle-pago-item">
@@ -812,7 +816,7 @@ function cerrarPrinterModal() {
 }
 
 // --- IMPRIMIR POR NAVEGADOR ---
-function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo) {
+function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, mostrarPagos = true) {
     const pdv = pedido.punto_venta_nombre;
     const fecha = new Date(pedido.creado).toLocaleString();
     const ticketId = sufijo ? '#' + pedido.id + '-' + sufijo : '#' + pedido.id;
@@ -832,14 +836,18 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo) {
     if (!lineasHtml) return null;
 
     let pagosHtml = '';
-    pedido.pagos.forEach(p => {
-        let extra = '';
-        if (p.metodo === 'EF' && p.monto_recibido) {
-            const vuelto = parseFloat(p.monto_recibido) - parseFloat(p.monto);
-            extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)} | Vuelto: $${vuelto.toFixed(2)}</small>`;
-        }
-        pagosHtml += `<tr><td>${p.metodo_display}</td><td style="text-align:right">$${parseFloat(p.monto).toFixed(2)}${extra}</td></tr>`;
-    });
+    if (mostrarPagos) {
+        pedido.pagos.forEach(p => {
+            let extra = '';
+            if (p.monto_recibido && parseFloat(p.monto_recibido) > parseFloat(p.monto)) {
+                const vuelto = parseFloat(p.monto_recibido) - parseFloat(p.monto);
+                extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)} | Vuelto: $${vuelto.toFixed(2)}</small>`;
+            } else if (p.monto_recibido) {
+                extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)}</small>`;
+            }
+            pagosHtml += `<tr><td>${p.metodo_display}</td><td style="text-align:right">$${parseFloat(p.monto).toFixed(2)}${extra}</td></tr>`;
+        });
+    }
 
     const totalStr = categoriaNombre
         ? '$' + subtotal.toFixed(2)
@@ -915,12 +923,14 @@ async function imprimirTicketNavegador(id) {
         const tieneBebida = categorias.has('Bebidas');
 
         if (tieneComida && tieneBebida) {
-            const htmlBebidas = buildTicketHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-            const htmlComidas = buildTicketHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+            const htmlConsolidado = buildTicketHtml(pedido, null, null, null, true);
+            const htmlBebidas = buildTicketHtml(pedido, 'Bebidas', 'BEBIDAS', 'B', false);
+            const htmlComidas = buildTicketHtml(pedido, 'Comidas', 'COMIDAS', 'C', false);
+            if (htmlConsolidado) openPrintWindow(htmlConsolidado);
             if (htmlBebidas) openPrintWindow(htmlBebidas);
             if (htmlComidas) openPrintWindow(htmlComidas);
         } else {
-            const html = buildTicketHtml(pedido);
+            const html = buildTicketHtml(pedido, null, null, null, true);
             openPrintWindow(html);
         }
     } catch (e) {
