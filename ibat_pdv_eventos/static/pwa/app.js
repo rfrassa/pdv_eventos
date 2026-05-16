@@ -31,8 +31,14 @@ async function apiFetch(url, options = {}) {
     };
     const res = await fetch(API_BASE + url, config);
     if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || err.detail || 'Error de conexión');
+        let msg = 'Error de conexión';
+        try {
+            const err = await res.json();
+            msg = err.error || err.detail || err.monto || err.pagos?.[0]?.monto || err.lineas?.[0]?.producto || Object.values(err).flat().join('; ') || msg;
+        } catch (_) {
+            msg = res.statusText || msg;
+        }
+        throw new Error(msg);
     }
     return res.json();
 }
