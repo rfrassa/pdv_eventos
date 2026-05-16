@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+ibat_pdv_env/
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+*.cert
+credentials.json
+auth.json
+secrets.*
+
+# Database
+*.sqlite3
+*.sqlite
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+
+# Django
+staticfiles/
+media/
+
+# Logs & temp
+*.log
+*.bak
+*.swp
+*.tmp
+/tmp/
+
+# Windows helpers
+*.bat
+*.cmd

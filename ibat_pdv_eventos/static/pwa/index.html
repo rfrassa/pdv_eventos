@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/static/pwa/manifest.json">
+    <title>PDV Eventos</title>
+    <link rel="stylesheet" href="/static/pwa/styles.css">
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span style="font-weight:700;font-size:1.1rem">Men&uacute;</span>
+            <button class="btn-back" onclick="toggleSidebar()" style="font-size:1.8rem">&times;</button>
+        </div>
+        <div class="sidebar-body">
+            <button class="sidebar-item" onclick="toggleSidebar();toggleHistorial()">
+                <span class="sidebar-icon">&#128214;</span> Historial
+            </button>
+            <button class="sidebar-item" onclick="toggleSidebar();toggleOrders()">
+                <span class="sidebar-icon">&#128203;</span> Pendientes
+            </button>
+            <button class="sidebar-item" onclick="toggleSidebar();selectPrinter()" id="btn-printer">
+                <span class="sidebar-icon">&#128424;</span> <span id="btn-printer-label">Impresora</span>
+                <span id="btn-printer-name" style="display:block;font-size:0.75rem;color:var(--text-light);margin-top:2px"></span>
+            </button>
+            <button class="sidebar-item" onclick="toggleSidebar();selectPDV()">
+                <span class="sidebar-icon">&#128188;</span> Cambiar PDV
+            </button>
+        </div>
+    </div>
+
+    <div id="app">
+        <header class="header">
+            <button class="btn-hamburger" onclick="toggleSidebar()">&#9776;</button>
+            <h1 id="evento-nombre">PDV Eventos</h1>
+            <span class="header-pdv" id="btn-pdv-select" onclick="toggleOrders()">PDV 1 <span class="badge-pendientes" id="badge-pendientes">0</span></span>
+        </header>
+
+        <div class="top-actions">
+            <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
+            <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label">GUARDAR</span></button>
+            <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
+            <span class="top-total" id="top-total">$0.00</span>
+        </div>
+
+        <div class="categories" id="categories"></div>
+
+        <div class="products-area" id="products-area">
+            <div class="empty-state" id="loading">Cargando productos...</div>
+            <div class="products-grid" id="products-grid"></div>
+        </div>
+
+        <div class="ticket-bar collapsed" id="ticket-bar">
+            <div class="ticket-summary" onclick="toggleTicket()">
+                <span class="ticket-count" id="ticket-count">0 productos</span>
+                <span class="ticket-total" id="ticket-total">$0.00</span>
+            </div>
+            <div class="ticket-body" id="ticket-body"></div>
+        </div>
+    </div>
+
+    <!-- PAYMENT OVERLAY -->
+    <div class="payment-overlay" id="payment-overlay">
+        <div class="pay-top">
+            <div class="pay-top-header">
+                <button class="btn-back" onclick="cerrarPago()">&larr;</button>
+                <span style="font-weight:600;font-size:1rem">Cobrar</span>
+                <div style="width:32px"></div>
+            </div>
+            <div class="pay-top-info">
+                <div class="pay-total-label">TOTAL</div>
+                <div class="pay-total-amount" id="pay-total">$0.00</div>
+                <div class="pay-remainder">
+                    Restante: <span id="pay-remainder">$0.00</span>
+                </div>
+            </div>
+            <div class="pay-top-confirm">
+                <button class="btn-confirm-payment" id="btn-confirm-payment" disabled onclick="confirmarPago()">CONFIRMAR PAGO</button>
+            </div>
+        </div>
+        <div class="pay-bottom">
+            <div class="payment-methods" id="payment-methods"></div>
+            <div class="payment-input-area" id="payment-input-area" style="display:none">
+                <div class="pay-method-label" id="pay-input-label">Efectivo</div>
+                <div class="pay-inline-row">
+                    <div class="pay-inline-field">
+                        <input type="number" class="amount-input" id="pay-amount-input" min="0" step="0.01" placeholder="0.00">
+                        <button class="btn-add-payment" onclick="agregarPago()">Agregar</button>
+                    </div>
+                    <div class="pay-inline-totals">
+                        <div class="pay-inline-total">TOTAL <span id="pay-inline-total">$0.00</span></div>
+                        <div class="pay-inline-rest">Restante <span id="pay-inline-remainder">$0.00</span></div>
+                    </div>
+                </div>
+                <div id="pay-efectivo-row" style="display:none;margin-top:8px">
+                    <label style="font-size:0.8rem;color:var(--text-light)">Efectivo recibido</label>
+                    <input type="number" class="amount-input" id="pay-recibido-input" min="0" step="0.01" placeholder="0.00" style="margin-top:2px">
+                </div>
+                <button class="btn-clear-payments" onclick="limpiarPagos()" style="margin-top:8px">Limpiar todo</button>
+            </div>
+            <div class="payment-list" id="payment-list"></div>
+        </div>
+    </div>
+
+    <div class="orders-overlay" id="orders-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="toggleOrders()">&larr;</button>
+            <h2>Pedidos Pendientes</h2>
+            <div style="width:32px"></div>
+        </div>
+        <div class="orders-list" id="orders-list">
+            <div class="empty-state">Cargando pedidos...</div>
+        </div>
+    </div>
+
+    <div class="orders-overlay" id="historial-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="toggleHistorial()">&larr;</button>
+            <h2>Historial de Pedidos</h2>
+            <div style="width:32px"></div>
+        </div>
+        <div class="orders-list" id="historial-list">
+            <div class="empty-state">Cargando historial...</div>
+        </div>
+    </div>
+
+    <!-- DETALLE OVERLAY -->
+    <div class="orders-overlay" id="detalle-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="cerrarDetalle()">&larr;</button>
+            <h2 id="detalle-title">Detalle</h2>
+            <div style="width:32px"></div>
+        </div>
+        <div class="orders-list" id="detalle-body">
+            <div class="empty-state">Cargando...</div>
+        </div>
+    </div>
+
+    <!-- PRINTER SELECTOR OVERLAY -->
+    <div class="orders-overlay" id="printer-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="cerrarPrinterModal()">&larr;</button>
+            <h2>Seleccionar Impresora</h2>
+            <div style="width:32px"></div>
+        </div>
+        <div class="orders-list" id="printer-list">
+            <div class="empty-state">Cargando impresoras...</div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/pwa/sw.js');
+        }
+    </script>
+    <script src="/static/pwa/app.js"></script>
+</body>
+</html>
