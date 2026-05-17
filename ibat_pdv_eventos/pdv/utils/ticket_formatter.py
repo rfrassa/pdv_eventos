@@ -1,4 +1,8 @@
+import logging
+
 ANCHO_TICKET = 48
+
+logger = logging.getLogger(__name__)
 
 
 class TicketFormatter:

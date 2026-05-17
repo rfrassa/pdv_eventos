@@ -75,26 +75,8 @@ def pedido_create(request):
     serializer = PedidoCreateSerializer(data=request.data)
     if serializer.is_valid():
         pedido = serializer.save()
-        impreso = False
-        if request.data.get('imprimir', False):
-            try:
-                from .utils.local_printer import LocalPrinterService
-                printer_name = request.data.get('printer_name')
-                service = LocalPrinterService(printer_name=printer_name)
-                service.print_ticket(pedido)
-                Pedido.objects.filter(id=pedido.id).update(veces_impreso=F('veces_impreso') + 1)
-                impreso = True
-            except Exception as e:
-                logger.warning(f"Error imprimiendo pedido #{pedido.id}: {e}")
-                impreso = False
-        else:
-            try:
-                from .utils.ticket_handler import imprimir_ticket
-                imprimir_ticket(pedido)
-            except Exception:
-                pass
         data = PedidoDetailSerializer(pedido).data
-        data['impreso'] = impreso
+        data['impreso'] = True
         return Response(data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -221,7 +203,12 @@ def cierre_caja(request):
 @csrf_exempt
 @api_view(['POST'])
 def pedido_imprimir_local(request, pedido_id):
-    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    from django.db.models import Prefetch
+    from .models import LineaPedido
+    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related(
+        Prefetch('lineas', queryset=LineaPedido.objects.select_related('producto__categoria')),
+        'pagos'
+    ), id=pedido_id)
     printer_name = request.data.get('printer_name')
     try:
         from .utils.local_printer import LocalPrinterService
@@ -229,6 +216,22 @@ def pedido_imprimir_local(request, pedido_id):
         nombre = service.print_ticket(pedido)
         Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
         return Response({'mensaje': f'Ticket enviado a {nombre}', 'impresora': nombre})
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['POST'])
+def test_impresora(request):
+    printer_name = request.data.get('printer_name')
+    try:
+        from .utils.local_printer import LocalPrinterService
+        service = LocalPrinterService(printer_name=printer_name)
+        printers = service.list_printers()
+        if not printers:
+            return Response({'error': 'No hay impresoras disponibles'}, status=status.HTTP_400_BAD_REQUEST)
+        nombre = service.test_print('=== PRUEBA PDV ===\nSi ves esto, la impresora funciona.\n\n' + __import__('datetime').datetime.now().strftime('%d/%m/%Y %H:%M'))
+        return Response({'mensaje': 'Prueba enviada a: ' + nombre, 'impresoras_disponibles': printers})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

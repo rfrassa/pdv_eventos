@@ -292,6 +292,11 @@ async function guardarPedido() {
         pagos: [],
     };
 
+    if (state.pedidoEditando) {
+        delete payload.pagos;
+        delete payload.punto_venta;
+    }
+
     state.procesando = true;
     try {
         const pedido = state.pedidoEditando
@@ -535,8 +540,6 @@ async function confirmarPago() {
             nota: l.nota || '',
         })),
         pagos: state.pagos,
-        imprimir: true,
-        printer_name: state.printerName || undefined,
     };
 
     const btn = document.getElementById('btn-confirm-payment');
@@ -546,16 +549,17 @@ async function confirmarPago() {
     state.procesando = true;
 
     try {
-        const res = await apiFetch('/api/pedidos/', {
-            method: 'POST',
+        const method = state.pedidoEditando ? 'PATCH' : 'POST';
+        const url = state.pedidoEditando ? `/api/pedidos/${state.pedidoEditando}/` : '/api/pedidos/';
+        const res = await apiFetch(url, {
+            method,
             body: JSON.stringify(payload),
         });
-        if (res.impreso) {
-            showNotification('Pago confirmado. Ticket enviado a impresora.');
-        } else {
-            showNotification('Pago confirmado. (Error al imprimir)', 'warning');
-        }
+        showNotification('Pago confirmado.');
         state.procesando = false;
+        setTimeout(async () => {
+            try { await imprimirEnPC(res.id); } catch {}
+        }, 500);
         cerrarPago();
         state.ticket = [];
         state.pedidoEditando = null;
@@ -921,7 +925,23 @@ function seleccionarImpresora(name) {
     const label = document.getElementById('btn-printer-name');
     if (label) label.textContent = state.printerName;
     showNotification('Impresora: ' + state.printerName);
-    document.getElementById('printer-overlay').classList.remove('open');
+}
+
+async function testImpresora() {
+    const name = state.printerName || (state.impresoras.length > 0 ? state.impresoras[0] : null);
+    if (!name) {
+        showNotification('No hay impresora seleccionada', 'error');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/test-impresora/', {
+            method: 'POST',
+            body: JSON.stringify({ printer_name: name }),
+        });
+        showNotification('Prueba enviada a: ' + name);
+    } catch (e) {
+        showNotification('Error en prueba: ' + e.message, 'error');
+    }
 }
 
 function cerrarPrinterModal() {

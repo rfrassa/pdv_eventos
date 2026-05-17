@@ -234,17 +234,51 @@ else {{ Write-Error "No printer found" }}
                 return None
             return self._print_linux(html)
 
+    def test_print(self, texto):
+        sistema = platform.system()
+        is_wsl = _is_wsl()
+        lineas = texto.split('\n')
+        if sistema == 'Windows':
+            return self._print_windows(lineas)
+        elif is_wsl:
+            html = '<html><body><pre>' + texto.replace('\n', '<br>') + '</pre></body></html>'
+            return self._print_windows_via_powershell(html, self.printer_name)
+        else:
+            html = '<html><body><pre>' + texto.replace('\n', '<br>') + '</pre></body></html>'
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                f.write(html)
+                tmpname = f.name
+            try:
+                cmd = ['lp']
+                if self.printer_name:
+                    cmd.extend(['-d', self.printer_name])
+                cmd.extend(['-o', 'media=80x150mm'])
+                cmd.append(tmpname)
+                resultado = subprocess.run(cmd, capture_output=True, text=True)
+                if resultado.returncode != 0:
+                    raise RuntimeError(f'Error lp: {resultado.stderr}')
+                return self.printer_name or 'default'
+            finally:
+                try:
+                    os.unlink(tmpname)
+                except Exception:
+                    pass
+
     def print_ticket(self, pedido):
         categorias = self._categorias_en_pedido(pedido)
+        logger.info(f"print_ticket #{pedido.id}: categorias={categorias}")
         nombre = None
 
         if CAT_COMIDA in categorias and CAT_BEBIDA in categorias:
+            logger.info(f"print_ticket #{pedido.id}: printing consolidated (no suffix)")
             nombre = self._imprimir_html(pedido, mostrar_pagos=True)
             for cat, etiqueta, suf in [(CAT_BEBIDA, 'BEBIDAS', 'B'), (CAT_COMIDA, 'COMIDAS', 'C')]:
+                logger.info(f"print_ticket #{pedido.id}: printing split sufijo={suf} cat={cat}")
                 n = self._imprimir_html(pedido, categoria_nombre=cat, etiqueta=etiqueta, sufijo=suf, mostrar_pagos=False)
                 if n:
                     nombre = n
         else:
+            logger.info(f"print_ticket #{pedido.id}: no split, single ticket")
             nombre = self._imprimir_html(pedido, mostrar_pagos=True)
 
         if nombre:
