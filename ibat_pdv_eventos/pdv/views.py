@@ -1,5 +1,5 @@
 import os
-import logging
+import threading
 from django.conf import settings
 from django.db.models import F
 from django.shortcuts import get_object_or_404
@@ -10,8 +10,6 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import Evento, Pedido, Producto, PuntoVenta
-
-logger = logging.getLogger(__name__)
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -22,7 +20,6 @@ from .serializers import (
 )
 
 
-@csrf_exempt
 @api_view(['GET', 'POST'])
 def productos_list(request):
     evento_activo = get_object_or_404(Evento, activo=True)
@@ -48,7 +45,6 @@ def productos_list(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@csrf_exempt
 @api_view(['GET', 'PATCH', 'DELETE'])
 def producto_detail(request, producto_id):
     producto = get_object_or_404(Producto, id=producto_id)
@@ -69,6 +65,20 @@ def producto_detail(request, producto_id):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _imprimir_en_background(pedido_id):
+    import django
+    django.setup()
+    from .models import Pedido
+    try:
+        pedido = Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos').get(id=pedido_id)
+        from .utils.ticket_handler import imprimir_ticket
+        imprimir_ticket(pedido)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error imprimiendo pedido #{pedido_id}: {e}")
+
+
 @csrf_exempt
 @api_view(['POST'])
 def pedido_create(request):
@@ -76,7 +86,7 @@ def pedido_create(request):
     if serializer.is_valid():
         pedido = serializer.save()
         data = PedidoDetailSerializer(pedido).data
-        data['impreso'] = True
+        data['impresion'] = 'pendiente'
         return Response(data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -121,7 +131,6 @@ def pedidos_historial(request):
     })
 
 
-@csrf_exempt
 @api_view(['GET', 'PATCH', 'DELETE'])
 def pedido_detail(request, pedido_id):
     if request.method == 'GET':
@@ -156,6 +165,35 @@ def pedido_reimprimir(request, pedido_id):
         return Response({'mensaje': 'Ticket reimpreso correctamente', 'veces_impreso': pedido.veces_impreso + 1})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+def test_print(request):
+    ip = request.data.get('ip') if request.method == 'POST' else request.query_params.get('ip', '192.168.0.58')
+    puerto = int(request.data.get('puerto', 9100) if request.method == 'POST' else request.query_params.get('puerto', 9100))
+    try:
+        from pdv.utils.local_printer import EscposBuffer
+        import socket
+        buf = EscposBuffer()
+        buf.set(align='center')
+        buf.text('=== TEST DE IMPRESION ===\n')
+        buf.text(f'IP: {ip}:{puerto}\n')
+        buf.text('IBAT San José\n')
+        buf.text('Peña IBAT 2026\n\n')
+        buf.set(align='left')
+        buf.text('Si ves esto la impresora\n')
+        buf.text('funciona correctamente!\n\n')
+        buf.cut()
+        data = buf.build()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        sock.connect((ip, puerto))
+        sock.send(data)
+        sock.close()
+        return Response({'mensaje': f'Ticket de prueba enviado a {ip}:{puerto}', 'ok': True})
+    except Exception as e:
+        return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -203,12 +241,7 @@ def cierre_caja(request):
 @csrf_exempt
 @api_view(['POST'])
 def pedido_imprimir_local(request, pedido_id):
-    from django.db.models import Prefetch
-    from .models import LineaPedido
-    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related(
-        Prefetch('lineas', queryset=LineaPedido.objects.select_related('producto__categoria')),
-        'pagos'
-    ), id=pedido_id)
+    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     printer_name = request.data.get('printer_name')
     try:
         from .utils.local_printer import LocalPrinterService
@@ -216,22 +249,6 @@ def pedido_imprimir_local(request, pedido_id):
         nombre = service.print_ticket(pedido)
         Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
         return Response({'mensaje': f'Ticket enviado a {nombre}', 'impresora': nombre})
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@csrf_exempt
-@api_view(['POST'])
-def test_impresora(request):
-    printer_name = request.data.get('printer_name')
-    try:
-        from .utils.local_printer import LocalPrinterService
-        service = LocalPrinterService(printer_name=printer_name)
-        printers = service.list_printers()
-        if not printers:
-            return Response({'error': 'No hay impresoras disponibles'}, status=status.HTTP_400_BAD_REQUEST)
-        nombre = service.test_print('=== PRUEBA PDV ===\nSi ves esto, la impresora funciona.\n\n' + __import__('datetime').datetime.now().strftime('%d/%m/%Y %H:%M'))
-        return Response({'mensaje': 'Prueba enviada a: ' + nombre, 'impresoras_disponibles': printers})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

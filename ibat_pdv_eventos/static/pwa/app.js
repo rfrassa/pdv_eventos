@@ -21,7 +21,6 @@ let state = {
     metodoSeleccionado: null,
     printerName: localStorage.getItem('pdv_printer') || '',
     impresoras: [],
-    procesando: false,
 };
 
 async function apiFetch(url, options = {}) {
@@ -31,14 +30,8 @@ async function apiFetch(url, options = {}) {
     };
     const res = await fetch(API_BASE + url, config);
     if (!res.ok) {
-        let msg = 'Error de conexión';
-        try {
-            const err = await res.json();
-            msg = err.error || err.detail || err.monto || err.pagos?.[0]?.monto || err.lineas?.[0]?.producto || Object.values(err).flat().join('; ') || msg;
-        } catch (_) {
-            msg = res.statusText || msg;
-        }
-        throw new Error(msg);
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || err.detail || 'Error de conexión');
     }
     return res.json();
 }
@@ -86,9 +79,9 @@ async function init() {
             state.pdvs = pdvs;
         } else {
             state.pdvs = [
-                { id: 1, nombre: 'PDV 1 - Entrada', impresora_ip: '192.168.1.101' },
-                { id: 2, nombre: 'PDV 2 - Principal', impresora_ip: '192.168.1.102' },
-                { id: 3, nombre: 'PDV 3 - VIP', impresora_ip: '192.168.1.103' },
+                { id: 1, nombre: 'PDV 1 - Entrada', impresora_ip: '192.168.0.58' },
+                { id: 2, nombre: 'PDV 2 - Principal', impresora_ip: '192.168.0.58' },
+                { id: 3, nombre: 'PDV 3 - VIP', impresora_ip: '192.168.0.58' },
             ];
         }
         state.pdvActual = state.pdvs[0];
@@ -264,7 +257,6 @@ function nuevoTicket() {
 
 // --- GUARDAR PEDIDO ---
 async function guardarPedido() {
-    if (state.procesando) return;
     if (state.ticket.length === 0) {
         showNotification('El ticket está vacío', 'error');
         return;
@@ -292,12 +284,6 @@ async function guardarPedido() {
         pagos: [],
     };
 
-    if (state.pedidoEditando) {
-        delete payload.pagos;
-        delete payload.punto_venta;
-    }
-
-    state.procesando = true;
     try {
         const pedido = state.pedidoEditando
             ? await apiFetch('/api/pedidos/' + state.pedidoEditando + '/', {
@@ -312,11 +298,9 @@ async function guardarPedido() {
         document.getElementById('btn-guardar-label').textContent = 'GUARDAR';
         state.ticket = [];
         state.pedidoEditando = null;
-        state.procesando = false;
         renderTicket();
         actualizarBadgePendientes();
     } catch (e) {
-        state.procesando = false;
         showNotification('Error al guardar: ' + e.message, 'error');
     }
 }
@@ -378,7 +362,7 @@ function seleccionarMetodo(id) {
     document.getElementById('pay-input-label').textContent = metodo.label;
     document.getElementById('pay-amount-input').value = '';
     document.getElementById('pay-recibido-input').value = '';
-    document.getElementById('pay-recibido-input').parentElement.style.display = 'block';
+    document.getElementById('pay-recibido-input').parentElement.style.display = id === 'EF' ? 'block' : 'none';
     document.getElementById('payment-input-area').style.display = 'block';
     renderMetodosPago();
     actualizarInlineTotals();
@@ -418,10 +402,10 @@ function renderPagos() {
         const metodo = METODOS_PAGO.find(m => m.id === p.metodo);
         const label = metodo ? metodo.label : p.metodo;
         let extra = '';
-        if (p.monto_recibido && p.monto_recibido > p.monto) {
+        if (p.metodo === 'EF' && p.monto_recibido && p.monto_recibido > p.monto) {
             const vuelto = Math.round((p.monto_recibido - p.monto) * 100) / 100;
             extra = `<div style="font-size:0.85rem;color:var(--success);font-weight:600">Vuelto: ${formatPrice(vuelto)}</div>`;
-        } else if (p.monto_recibido) {
+        } else if (p.metodo === 'EF' && p.monto_recibido) {
             extra = `<div style="font-size:0.75rem;color:var(--text-light)">Recibido: ${formatPrice(p.monto_recibido)}</div>`;
         }
         html += `
@@ -457,30 +441,21 @@ function agregarPago() {
     const remainder = getRemainder();
     const pago = { metodo: state.metodoSeleccionado };
 
-    const recibidoStr = document.getElementById('pay-recibido-input').value.trim();
-    const recibido = recibidoStr ? parseFloat(recibidoStr) : null;
-
     if (state.metodoSeleccionado === 'EF') {
-        const efectivoRecibido = recibido || montoIngresado;
-        if (efectivoRecibido < montoIngresado) {
-            showNotification('El monto recibido no puede ser menor al monto', 'error');
-            return;
-        }
-        pago.monto = Math.round(Math.min(montoIngresado, remainder) * 100) / 100;
-        pago.monto_recibido = Math.round(efectivoRecibido * 100) / 100;
-    } else if (recibido !== null) {
+        const recibido = parseFloat(document.getElementById('pay-recibido-input').value) || montoIngresado;
         if (recibido < 0.01) {
-            showNotification('Ingresá un monto recibido válido', 'error');
+            showNotification('Ingresá el efectivo recibido', 'error');
             return;
         }
         if (recibido < montoIngresado) {
-            showNotification('El monto recibido no puede ser menor al monto', 'error');
+            showNotification('El efectivo recibido no puede ser menor al monto', 'error');
             return;
         }
-        pago.monto = Math.round(Math.min(montoIngresado, remainder) * 100) / 100;
+        const montoPago = Math.min(montoIngresado, remainder);
+        pago.monto = Math.round(montoPago * 100) / 100;
         pago.monto_recibido = Math.round(recibido * 100) / 100;
     } else {
-        if (montoIngresado > remainder + 0.005) {
+        if (montoIngresado > remainder + 0.01) {
             showNotification('El monto supera el restante', 'error');
             return;
         }
@@ -513,7 +488,6 @@ function limpiarPagos() {
 }
 
 async function confirmarPago() {
-    if (state.procesando) return;
     const remainder = getRemainder();
     if (Math.abs(remainder) > 0.01) {
         showNotification('Falta cubrir el total', 'error');
@@ -542,34 +516,19 @@ async function confirmarPago() {
         pagos: state.pagos,
     };
 
-    const btn = document.getElementById('btn-confirm-payment');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Procesando...';
-    state.procesando = true;
-
     try {
-        const method = state.pedidoEditando ? 'PATCH' : 'POST';
-        const url = state.pedidoEditando ? `/api/pedidos/${state.pedidoEditando}/` : '/api/pedidos/';
-        const res = await apiFetch(url, {
-            method,
+        const pedidoCreado = await apiFetch('/api/pedidos/', {
+            method: 'POST',
             body: JSON.stringify(payload),
         });
         showNotification('Pago confirmado.');
-        state.procesando = false;
-        setTimeout(async () => {
-            try { await imprimirEnPC(res.id); } catch {}
-        }, 500);
         cerrarPago();
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        actualizarBadgePendientes();
+        setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
     } catch (e) {
-        state.procesando = false;
         showNotification('Error al procesar pago: ' + e.message, 'error');
-        btn.disabled = false;
-        btn.textContent = originalText;
     }
 }
 
@@ -621,53 +580,14 @@ async function toggleOrders() {
     }
 }
 
-async function reloadOrders() {
-    const overlay = document.getElementById('orders-overlay');
-    if (!overlay.classList.contains('open')) return;
-    try {
-        const pedidos = await apiFetch('/api/pedidos/abiertos/?punto_venta_id=' + state.pdvActual.id);
-        const list = document.getElementById('orders-list');
-        if (pedidos.length === 0) {
-            list.innerHTML = '<div class="empty-state">No hay pedidos pendientes</div>';
-            return;
-        }
-        let html = '';
-        pedidos.forEach(p => {
-            html += `
-                <div class="order-card">
-                    <div class="order-card-info">
-                        <div class="order-card-id">Pedido #${p.id}</div>
-                        <div class="order-card-total">${formatPrice(p.total_final)}</div>
-                        <div class="order-card-time">${new Date(p.creado).toLocaleString()}</div>
-                    </div>
-                    <div style="display:flex;gap:6px">
-                        <button class="btn-resume-order" onclick="retomarPedido(${p.id})">Retomar</button>
-                        <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedido(${p.id})">Eliminar</button>
-                    </div>
-                </div>
-            `;
-        });
-        list.innerHTML = html;
-    } catch (e) {
-        showNotification('Error al cargar pedidos: ' + e.message, 'error');
-    }
-}
-
 async function eliminarPedido(id) {
     if (!confirm('¿Eliminar pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        await reloadOrders();
-        actualizarBadgePendientes();
+        toggleOrders();
     } catch (e) {
-        if (e.message.includes('No Pedido matches') || e.message.includes('404')) {
-            showNotification('Pedido #' + id + ' ya fue eliminado');
-            await reloadOrders();
-            actualizarBadgePendientes();
-        } else {
-            showNotification('Error al eliminar: ' + e.message, 'error');
-        }
+        showNotification('Error al eliminar: ' + e.message, 'error');
     }
 }
 
@@ -732,53 +652,14 @@ async function toggleHistorial() {
     }
 }
 
-async function reloadHistorial() {
-    const overlay = document.getElementById('historial-overlay');
-    if (!overlay.classList.contains('open')) return;
-    try {
-        const data = await apiFetch('/api/pedidos/historial/?punto_venta_id=' + state.pdvActual.id + '&limite=100');
-        const list = document.getElementById('historial-list');
-        if (data.resultados.length === 0) {
-            list.innerHTML = '<div class="empty-state">No hay pedidos en el historial</div>';
-            return;
-        }
-        let html = '';
-        data.resultados.forEach(p => {
-            const estado = p.cerrado ? 'Cerrado' : 'Abierto';
-            html += `
-                <div class="order-card">
-                    <div class="order-card-info">
-                        <div class="order-card-id">Pedido #${p.id} <span style="font-size:0.7rem;color:${p.cerrado ? 'var(--success)' : 'var(--warning)'}">(${estado})</span></div>
-                        <div class="order-card-total">${formatPrice(p.total_final)}</div>
-                        <div class="order-card-time">${new Date(p.creado).toLocaleString()} - ${p.punto_venta_nombre}</div>
-                    </div>
-                    <div style="display:flex;gap:6px">
-                        <button class="btn-resume-order" onclick="toggleDetalle(${p.id})">Ver</button>
-                        <button class="btn-resume-order" onclick="imprimirEnPC(${p.id})">Imprimir${p.veces_impreso ? ' (' + p.veces_impreso + ')' : ''}</button>
-                        <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedidoHistorial(${p.id})">Eliminar</button>
-                    </div>
-                </div>
-            `;
-        });
-        list.innerHTML = html;
-    } catch (e) {
-        showNotification('Error al cargar historial: ' + e.message, 'error');
-    }
-}
-
 async function eliminarPedidoHistorial(id) {
     if (!confirm('¿Eliminar permanentemente el pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        await reloadHistorial();
+        toggleHistorial();
     } catch (e) {
-        if (e.message.includes('No Pedido matches') || e.message.includes('404')) {
-            showNotification('Pedido #' + id + ' ya fue eliminado');
-            await reloadHistorial();
-        } else {
-            showNotification('Error al eliminar: ' + e.message, 'error');
-        }
+        showNotification('Error al eliminar: ' + e.message, 'error');
     }
 }
 
@@ -821,11 +702,9 @@ async function toggleDetalle(id) {
         let pagosHtml = '';
         p.pagos.forEach(pg => {
             let extra = '';
-            if (pg.monto_recibido && parseFloat(pg.monto_recibido) > parseFloat(pg.monto)) {
+            if (pg.metodo === 'EF' && pg.monto_recibido) {
                 const vuelto = parseFloat(pg.monto_recibido) - parseFloat(pg.monto);
                 extra = '<div class="detalle-pago-extra">Recibido: $' + parseFloat(pg.monto_recibido).toFixed(2) + ' | Vuelto: $' + vuelto.toFixed(2) + '</div>';
-            } else if (pg.monto_recibido) {
-                extra = '<div class="detalle-pago-extra">Recibido: $' + parseFloat(pg.monto_recibido).toFixed(2) + '</div>';
             }
             pagosHtml += `
                 <div class="detalle-pago-item">
@@ -925,23 +804,7 @@ function seleccionarImpresora(name) {
     const label = document.getElementById('btn-printer-name');
     if (label) label.textContent = state.printerName;
     showNotification('Impresora: ' + state.printerName);
-}
-
-async function testImpresora() {
-    const name = state.printerName || (state.impresoras.length > 0 ? state.impresoras[0] : null);
-    if (!name) {
-        showNotification('No hay impresora seleccionada', 'error');
-        return;
-    }
-    try {
-        const res = await apiFetch('/api/test-impresora/', {
-            method: 'POST',
-            body: JSON.stringify({ printer_name: name }),
-        });
-        showNotification('Prueba enviada a: ' + name);
-    } catch (e) {
-        showNotification('Error en prueba: ' + e.message, 'error');
-    }
+    document.getElementById('printer-overlay').classList.remove('open');
 }
 
 function cerrarPrinterModal() {
@@ -949,10 +812,52 @@ function cerrarPrinterModal() {
 }
 
 // --- IMPRIMIR POR NAVEGADOR ---
-function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, mostrarPagos = true) {
+function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
     const pdv = pedido.punto_venta_nombre;
     const fecha = new Date(pedido.creado).toLocaleString();
     const ticketId = sufijo ? '#' + pedido.id + '-' + sufijo : '#' + pedido.id;
+    const etiquetaHtml = etiqueta
+        ? `<div class="center" style="font-size:14px;font-weight:bold;margin:4px 0 6px">--- ${etiqueta} ---</div>`
+        : '';
+
+    if (simple) {
+        let lineasHtml = '';
+        pedido.lineas.forEach(l => {
+            if (categoriaNombre && l.categoria_nombre !== categoriaNombre) return;
+            lineasHtml += `<div style="padding:4px 0;font-size:14px">${l.cantidad}x ${l.producto_nombre}${l.nota ? '<br><small>(' + l.nota + ')</small>' : ''}</div>`;
+        });
+        if (!lineasHtml) return null;
+
+        return `
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; width: 80mm; margin: 0 auto; padding: 10px; }
+                    .header { text-align: center; font-weight: bold; font-size: 16px; margin: 0 0 2px; }
+                    .subheader { text-align: center; font-weight: bold; font-size: 18px; margin: 0 0 6px; }
+                    .evento { text-align: center; font-size: 15px; margin: 4px 0; }
+                    .info { font-size: 13px; margin-bottom: 8px; }
+                    @media print {
+                        @page { margin: 0; size: 80mm auto; }
+                        body { margin: 0; padding: 5mm; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">CENTRO DE ESTUDIANTES</div>
+                <div class="subheader">IBAT San José</div>
+                <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
+                ${etiquetaHtml}
+                <div class="info">
+                    PDV: ${pdv} | ${ticketId}<br>
+                    ${fecha}
+                </div>
+                ${lineasHtml}
+            </body>
+            </html>
+        `;
+    }
+
     let lineasHtml = '';
     let subtotal = 0;
     pedido.lineas.forEach(l => {
@@ -969,25 +874,18 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, mostrarPagos
     if (!lineasHtml) return null;
 
     let pagosHtml = '';
-    if (mostrarPagos) {
-        pedido.pagos.forEach(p => {
-            let extra = '';
-            if (p.monto_recibido && parseFloat(p.monto_recibido) > parseFloat(p.monto)) {
-                const vuelto = parseFloat(p.monto_recibido) - parseFloat(p.monto);
-                extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)} | Vuelto: $${vuelto.toFixed(2)}</small>`;
-            } else if (p.monto_recibido) {
-                extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)}</small>`;
-            }
-            pagosHtml += `<tr><td>${p.metodo_display}</td><td style="text-align:right">$${parseFloat(p.monto).toFixed(2)}${extra}</td></tr>`;
-        });
-    }
+    pedido.pagos.forEach(p => {
+        let extra = '';
+        if (p.metodo === 'EF' && p.monto_recibido) {
+            const vuelto = parseFloat(p.monto_recibido) - parseFloat(p.monto);
+            extra = `<br><small>Recibido: $${parseFloat(p.monto_recibido).toFixed(2)} | Vuelto: $${vuelto.toFixed(2)}</small>`;
+        }
+        pagosHtml += `<tr><td>${p.metodo_display}</td><td style="text-align:right">$${parseFloat(p.monto).toFixed(2)}${extra}</td></tr>`;
+    });
 
     const totalStr = categoriaNombre
         ? '$' + subtotal.toFixed(2)
         : '$' + parseFloat(pedido.total_final).toFixed(2);
-    const etiquetaHtml = etiqueta
-        ? `<div class="center" style="font-size:14px;font-weight:bold;margin:4px 0 6px">--- ${etiqueta} ---</div>`
-        : '';
 
     return `
         <html>
@@ -1040,6 +938,55 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, mostrarPagos
     `;
 }
 
+function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
+    const pdv = pedido.punto_venta_nombre;
+    const fecha = new Date(pedido.creado).toLocaleString();
+    const ticketId = '#' + pedido.id + '-' + sufijo;
+
+    const qrData = encodeURIComponent('Pedido ' + ticketId + ' - IBAT 2026');
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + qrData;
+
+    let lineasHtml = '';
+    pedido.lineas.forEach(l => {
+        if (l.categoria_nombre !== categoriaNombre) return;
+        const nota = l.nota ? '<br><small>(' + l.nota + ')</small>' : '';
+        lineasHtml += '<div style="padding:4px 0;font-size:14px">' + l.cantidad + 'x ' + l.producto_nombre + nota + '</div>';
+    });
+    if (!lineasHtml) return null;
+
+    return `
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; width: 80mm; margin: 0 auto; padding: 10px; }
+                .header { text-align: center; font-weight: bold; font-size: 16px; margin: 0 0 2px; }
+                .subheader { text-align: center; font-weight: bold; font-size: 18px; margin: 0 0 6px; }
+                .evento { text-align: center; font-size: 15px; margin: 4px 0; }
+                .info { font-size: 13px; margin-bottom: 8px; }
+                @media print {
+                    @page { margin: 0; size: 80mm auto; }
+                    body { margin: 0; padding: 5mm; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">CENTRO DE ESTUDIANTES</div>
+            <div class="subheader">IBAT San José</div>
+            <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
+            <div class="center" style="font-size:14px;font-weight:bold;margin:4px 0">--- ${etiqueta} ---</div>
+            <div class="info">
+                PDV: ${pdv} | ${ticketId}<br>
+                ${fecha}
+            </div>
+            ${lineasHtml}
+            <div style="text-align:center;margin-top:8px">
+                <img src="${qrUrl}" width="80" height="80" alt="QR">
+            </div>
+        </body>
+        </html>
+    `;
+}
+
 function openPrintWindow(html) {
     const ventana = window.open('', '_blank', 'width=400,height=600');
     ventana.document.write(html);
@@ -1052,19 +999,18 @@ async function imprimirTicketNavegador(id) {
     try {
         const pedido = await apiFetch('/api/pedidos/' + id + '/');
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
-        const tieneComida = categorias.has('Comidas');
-        const tieneBebida = categorias.has('Bebidas');
 
-        if (tieneComida && tieneBebida) {
-            const htmlConsolidado = buildTicketHtml(pedido, null, null, null, true);
-            const htmlBebidas = buildTicketHtml(pedido, 'Bebidas', 'BEBIDAS', 'B', false);
-            const htmlComidas = buildTicketHtml(pedido, 'Comidas', 'COMIDAS', 'C', false);
-            if (htmlConsolidado) openPrintWindow(htmlConsolidado);
-            if (htmlBebidas) openPrintWindow(htmlBebidas);
+        const htmlCompleto = buildTicketHtml(pedido);
+        if (htmlCompleto) openPrintWindow(htmlCompleto);
+
+        if (categorias.has('Comidas')) {
+            const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
             if (htmlComidas) openPrintWindow(htmlComidas);
-        } else {
-            const html = buildTicketHtml(pedido, null, null, null, true);
-            openPrintWindow(html);
+        }
+
+        if (categorias.has('Bebidas')) {
+            const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+            if (htmlBebidas) openPrintWindow(htmlBebidas);
         }
     } catch (e) {
         showNotification('Error al preparar impresión: ' + e.message, 'error');
@@ -1089,5 +1035,52 @@ function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('sidebar-overlay').classList.toggle('open');
 }
+
+// --- KEYBOARD NAV ---
+document.addEventListener('keydown', function(e) {
+    const overlay = document.getElementById('payment-overlay');
+    if (!overlay || !overlay.classList.contains('open')) return;
+
+    const input = document.getElementById('pay-amount-input');
+    const recibido = document.getElementById('pay-recibido-input');
+    const agregarBtn = document.querySelector('.btn-add-payment');
+    const confirmarBtn = document.getElementById('btn-confirm-payment');
+
+    if (e.key === 'Enter') {
+        const el = document.activeElement;
+        if (el === input || el === recibido || el === agregarBtn) {
+            e.preventDefault();
+            agregarPago();
+        } else if (el === confirmarBtn && !confirmarBtn.disabled) {
+            e.preventDefault();
+            confirmarPago();
+        }
+        return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const efVisible = recibido.parentElement.style.display !== 'none';
+
+    const tabOrder = efVisible
+        ? [input, recibido, agregarBtn, confirmarBtn]
+        : [input, agregarBtn, confirmarBtn];
+
+    const active = document.activeElement;
+    const idx = tabOrder.indexOf(active);
+
+    if (idx === -1) return;
+    e.preventDefault();
+
+    let next;
+    if (e.shiftKey) {
+        next = idx === 0 ? tabOrder[tabOrder.length - 1] : tabOrder[idx - 1];
+    } else {
+        next = idx === tabOrder.length - 1 ? tabOrder[0] : tabOrder[idx + 1];
+    }
+    if (!next) return;
+    if (next === confirmarBtn && confirmarBtn.disabled) return;
+    next.focus();
+});
 
 document.addEventListener('DOMContentLoaded', init);
