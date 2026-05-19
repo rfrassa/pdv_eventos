@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -256,6 +256,7 @@ def impresoras_disponibles(request):
         return Response({'impresoras': [], 'error': str(e)})
 
 
+@ensure_csrf_cookie
 def pwa_index(request):
     path = os.path.join(settings.BASE_DIR, 'static', 'pwa', 'index.html')
     with open(path, 'r', encoding='utf-8') as f:
