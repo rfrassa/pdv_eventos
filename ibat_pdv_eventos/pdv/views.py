@@ -147,9 +147,13 @@ def pedido_reimprimir(request, pedido_id):
         from .utils.ticket_handler import imprimir_ticket
         imprimir_ticket(pedido)
         Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
-        return Response({'mensaje': 'Ticket reimpreso correctamente', 'veces_impreso': pedido.veces_impreso + 1})
+        return Response({'ok': True, 'mensaje': 'Ticket reimpreso correctamente', 'veces_impreso': pedido.veces_impreso + 1})
+    except RuntimeError as e:
+        return Response({'ok': False, 'error': str(e)})
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        import logging as _log
+        _log.getLogger(__name__).error(f'Error inesperado reimprimir #{pedido_id}: {e}')
+        return Response({'ok': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt
@@ -226,16 +230,20 @@ def cierre_caja(request):
 @csrf_exempt
 @api_view(['POST'])
 def pedido_imprimir_local(request, pedido_id):
-    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     printer_name = request.data.get('printer_name')
     try:
         from .utils.local_printer import LocalPrinterService
-        service = LocalPrinterService(printer_name=printer_name)
+        service = LocalPrinterService(ip=pedido.punto_venta.impresora_ip, printer_name=printer_name)
         nombre = service.print_ticket(pedido)
         Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
-        return Response({'mensaje': f'Ticket enviado a {nombre}', 'impresora': nombre})
+        return Response({'ok': True, 'mensaje': f'Ticket enviado a {nombre}', 'impresora': nombre})
+    except RuntimeError as e:
+        return Response({'ok': False, 'error': str(e)})
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        import logging as _log
+        _log.getLogger(__name__).error(f'Error inesperado imprimir_local #{pedido_id}: {e}')
+        return Response({'ok': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

@@ -763,7 +763,11 @@ async function imprimirEnPC(id) {
             method: 'POST',
             body: JSON.stringify({ printer_name: state.printerName || undefined }),
         });
-        showNotification('✅ Ticket enviado a: ' + res.impresora);
+        if (res.ok === false) {
+            showNotification('⚠️ Pedido guardado. ' + (res.error || 'Impresora no disponible'), 'warning');
+        } else {
+            showNotification('✅ Ticket enviado a: ' + res.impresora);
+        }
     } catch (e) {
         showNotification('Error de impresión: ' + e.message, 'error');
     }

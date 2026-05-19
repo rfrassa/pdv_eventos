@@ -72,6 +72,17 @@ class LocalPrinterService:
         self.ip = ip or IP_IMPRESORA
         self.printer_name = printer_name
 
+    def check_connectivity(self, timeout=1):
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((self.ip, PUERTO_IMPRESORA))
+            sock.close()
+            return True
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            return False
+
     def _get_available_printers_windows(self):
         try:
             import win32print
@@ -121,6 +132,8 @@ class LocalPrinterService:
         time.sleep(segundos)
 
     def print_ticket(self, pedido):
+        if not self.check_connectivity():
+            raise RuntimeError(f'Impresora no disponible en {self.ip}')
         categorias = self._categorias_en_pedido(pedido)
         logger.warning(f'[print_ticket #{pedido.id}] categorias={categorias}, total_lineas={pedido.lineas.count()}')
         nombre = None
