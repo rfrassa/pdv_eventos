@@ -23,9 +23,17 @@ let state = {
     impresoras: [],
 };
 
+function getCsrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+    return match ? match[1] : '';
+}
+
 async function apiFetch(url, options = {}) {
     const config = {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
         ...options,
     };
     const res = await fetch(API_BASE + url, config);
