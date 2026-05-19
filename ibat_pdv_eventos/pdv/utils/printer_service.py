@@ -20,7 +20,7 @@ class PrinterService:
         except (socket.timeout, ConnectionRefusedError, OSError):
             return False
 
-    def print_ticket(self, lineas):
+    def print_ticket(self, lineas, qr_data=None):
         if not self._check_connectivity():
             logger.warning(f"Impresora {self.ip}:{self.puerto} no disponible")
             return False
@@ -30,6 +30,8 @@ class PrinterService:
             printer.set(align='left', bold=False)
             for linea in lineas:
                 printer.text(linea + '\n')
+            if qr_data:
+                printer.qr(qr_data, size=6)
             printer.cut()
             printer.close()
             logger.info(f"Ticket impreso correctamente en {self.ip}:{self.puerto}")

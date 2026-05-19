@@ -1,8 +1,4 @@
-import logging
-
 ANCHO_TICKET = 48
-
-logger = logging.getLogger(__name__)
 
 
 class TicketFormatter:
@@ -37,19 +33,45 @@ class TicketFormatter:
             lineas.append(linea_actual)
         return lineas
 
-    def formatear(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None, mostrar_pagos=True):
+    def formatear_comanda(self, pedido, categoria_nombre, etiqueta, sufijo):
         lineas = []
         evento = pedido.punto_venta.evento
         lineas.append(self._center('CENTRO DE ESTUDIANTES'))
-        lineas.append(self._center('IBAT San José'))
+        lineas.append(self._center('IBAT San Jose'))
         lineas.append('')
-        lineas.append(self._center('Peña IBAT 2026'))
+        lineas.append(self._center('Pena IBAT 2026'))
+        lineas.append('')
+        ticket_id = f"#{pedido.id}-{sufijo}"
+        lineas.append(self._left_right(f"PDV: {pedido.punto_venta.nombre}", ticket_id))
+        lineas.append(self._left_right(pedido.creado.strftime('%d/%m/%Y %H:%M'), ''))
+        lineas.append(self._center(f'--- {etiqueta} ---'))
+        lineas.append(self._linea_sep('='))
+
+        for linea in pedido.lineas.all():
+            if linea.producto.categoria.nombre != categoria_nombre:
+                continue
+            nombre = f"{linea.cantidad}x {linea.producto.nombre}"
+            for l in self._wrap(nombre):
+                lineas.append(l)
+            if linea.nota:
+                for l in self._wrap(f"  ({linea.nota})"):
+                    lineas.append(l)
+        return lineas
+
+    def formatear(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
+        lineas = []
+        evento = pedido.punto_venta.evento
+        lineas.append(self._center('CENTRO DE ESTUDIANTES'))
+        lineas.append(self._center('IBAT San Jose'))
+        lineas.append('')
+        lineas.append(self._center('Pena IBAT 2026'))
         lineas.append('')
         ticket_id = f"#{pedido.id}-{sufijo}" if sufijo else f"#{pedido.id}"
         lineas.append(self._left_right(f"PDV: {pedido.punto_venta.nombre}", ticket_id))
         lineas.append(self._left_right(pedido.creado.strftime('%d/%m/%Y %H:%M'), ''))
         if etiqueta:
             lineas.append(self._center(f'--- {etiqueta} ---'))
+
         lineas.append(self._linea_sep('='))
         lineas.append(self._left_right('PRODUCTO', 'TOTAL'))
         lineas.append(self._linea_sep('-'))
@@ -95,27 +117,23 @@ class TicketFormatter:
             tlinea = f'* TOTAL *  * ${pedido.total_final:.2f} *'
             lineas.append(tlinea.rjust(self.ancho))
 
-        if mostrar_pagos:
-            lineas.append(self._linea_sep('='))
-            lineas.append('')
-            lineas.append(self._center('-- PAGOS --'))
+        lineas.append(self._linea_sep('='))
+        lineas.append('')
+        lineas.append(self._center('-- PAGOS --'))
 
-            for pago in pedido.pagos.all():
-                if pago.monto_recibido and pago.monto_recibido > pago.monto:
-                    vuelto = pago.monto_recibido - pago.monto
-                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
-                    lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
-                    lineas.append(self._left_right('  Vuelto', f"${vuelto:.2f}"))
-                elif pago.monto_recibido:
-                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
-                    lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
-                else:
-                    lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
+        for pago in pedido.pagos.all():
+            if pago.metodo == 'EF' and pago.monto_recibido:
+                vuelto = pago.monto_recibido - pago.monto
+                lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
+                lineas.append(self._left_right('  Recibido', f"${pago.monto_recibido:.2f}"))
+                lineas.append(self._left_right('  Vuelto', f"${vuelto:.2f}"))
+            else:
+                lineas.append(self._left_right(pago.get_metodo_display(), f"${pago.monto:.2f}"))
 
         lineas.append(self._linea_sep('='))
         lineas.append('')
         lineas.append(self._center('Gracias por su compra'))
-        lineas.append(self._center('created by RaízDigital®'))
+        lineas.append(self._center('created by RaizDigital'))
         lineas.append('')
         return lineas
 
