@@ -4,7 +4,7 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
-IP_IMPRESORA = '192.168.0.58'
+IP_IMPRESORA = '192.168.0.67'
 PUERTO_IMPRESORA = 9100
 
 
