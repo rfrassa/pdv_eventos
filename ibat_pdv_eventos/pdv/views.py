@@ -1,5 +1,4 @@
 import os
-import threading
 from django.conf import settings
 from django.db.models import F
 from django.shortcuts import get_object_or_404
@@ -63,20 +62,6 @@ def producto_detail(request, producto_id):
     producto.disponible = False
     producto.save()
     return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-def _imprimir_en_background(pedido_id):
-    import django
-    django.setup()
-    from .models import Pedido
-    try:
-        pedido = Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos').get(id=pedido_id)
-        from .utils.ticket_handler import imprimir_ticket
-        imprimir_ticket(pedido)
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error imprimiendo pedido #{pedido_id}: {e}")
 
 
 @csrf_exempt
@@ -161,7 +146,7 @@ def pedido_reimprimir(request, pedido_id):
     try:
         from .utils.ticket_handler import imprimir_ticket
         imprimir_ticket(pedido)
-        Pedido.objects.filter(id=pedido_id).update(veces_impreso=models.F('veces_impreso') + 1)
+        Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
         return Response({'mensaje': 'Ticket reimpreso correctamente', 'veces_impreso': pedido.veces_impreso + 1})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
