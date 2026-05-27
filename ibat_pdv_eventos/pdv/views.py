@@ -247,6 +247,62 @@ def pedido_imprimir_local(request, pedido_id):
 
 
 @api_view(['GET'])
+def pedido_imprimir_pdf(request, pedido_id):
+    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    try:
+        from .utils.ticket_formatter import TicketFormatter
+        formatter = TicketFormatter()
+        lineas = formatter.formatear(pedido)
+
+        # Try to generate a PDF using ReportLab if available
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.units import mm
+            from io import BytesIO
+
+            page_width = 80 * mm
+            line_height = 12
+            margin_top = 8
+            height = max(200, int(margin_top + len(lineas) * line_height + 20))
+
+            buf = BytesIO()
+            c = canvas.Canvas(buf, pagesize=(page_width, height))
+            c.setFont('Helvetica', 10)
+            y = height - margin_top
+            for l in lineas:
+                # simple wrap: drawString will clip if too long
+                c.drawString(6, y, l)
+                y -= line_height
+                if y < 10:
+                    c.showPage()
+                    c.setFont('Helvetica', 10)
+                    y = height - margin_top
+            c.showPage()
+            c.save()
+            buf.seek(0)
+            resp = HttpResponse(buf.read(), content_type='application/pdf')
+            resp['Content-Disposition'] = f'inline; filename="pedido-{pedido.id}.pdf"'
+            return resp
+        except ImportError:
+            # Fallback: return an HTML preview the user can print/save as PDF from browser
+            html_lines = '\n'.join(f"<div>{l}</div>" for l in lineas)
+            html = f"""
+                <html><head><meta charset='utf-8'><style>
+                body{{font-family:monospace;width:80mm;margin:0;padding:8px}}
+                .line{{white-space:pre-wrap;font-size:12px}}
+                </style></head><body>
+                {html_lines}
+                </body></html>
+            """
+            return HttpResponse(html, content_type='text/html')
+
+    except Exception as e:
+        import logging as _log
+        _log.getLogger(__name__).error(f'Error generando PDF #{pedido_id}: {e}')
+        return Response({'ok': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
 def impresoras_disponibles(request):
     try:
         from .utils.local_printer import LocalPrinterService

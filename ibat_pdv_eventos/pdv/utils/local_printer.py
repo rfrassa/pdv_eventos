@@ -1,6 +1,8 @@
 import logging
 import platform
 import subprocess
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +72,190 @@ def _is_wsl():
 class LocalPrinterService:
     def __init__(self, ip=None, printer_name=None):
         self.ip = ip or IP_IMPRESORA
-        self.printer_name = printer_name
+        self.printer_name = (printer_name or '').strip() or None
+
+    def _is_local_printer_mode(self):
+        return bool(self.printer_name)
+
+    def _send_raw_to_windows_printer(self, data):
+        try:
+            import win32print
+        except Exception as e:
+            raise RuntimeError(f'No se pudo cargar win32print: {e}')
+
+        printer = self.printer_name or win32print.GetDefaultPrinter()
+        if not printer:
+            raise RuntimeError('No hay impresora predeterminada en Windows.')
+
+        try:
+            handle = win32print.OpenPrinter(printer)
+            try:
+                win32print.StartDocPrinter(handle, 1, ('PDV Ticket', None, 'RAW'))
+                win32print.StartPagePrinter(handle)
+                win32print.WritePrinter(handle, data)
+                win32print.EndPagePrinter(handle)
+                win32print.EndDocPrinter(handle)
+            finally:
+                win32print.ClosePrinter(handle)
+        except Exception as e:
+            raise RuntimeError(f'Error enviando a impresora Windows "{printer}": {e}')
+
+        return printer
+
+    def _send_text_to_windows_printer(self, text_data):
+        try:
+            import win32print
+        except Exception as e:
+            raise RuntimeError(f'No se pudo cargar win32print: {e}')
+
+        printer = self.printer_name or win32print.GetDefaultPrinter()
+        if not printer:
+            raise RuntimeError('No hay impresora predeterminada en Windows.')
+
+        last_error = None
+        for datatype in ('TEXT', 'RAW', None):
+            try:
+                handle = win32print.OpenPrinter(printer)
+                try:
+                    win32print.StartDocPrinter(handle, 1, ('PDV Ticket', None, datatype))
+                    win32print.StartPagePrinter(handle)
+                    win32print.WritePrinter(handle, text_data)
+                    win32print.EndPagePrinter(handle)
+                    win32print.EndDocPrinter(handle)
+                finally:
+                    win32print.ClosePrinter(handle)
+                return printer
+            except Exception as e:
+                last_error = e
+                logger.warning(f'[_send_text_to_windows_printer] fallo datatype={datatype}: {e}')
+
+        # Fallback compatible con impresoras de oficina (por ejemplo Epson L355)
+        # que no aceptan bien StartDocPrinter/WritePrinter en RAW/TEXT.
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(prefix='pdv_ticket_', suffix='.txt')
+            with os.fdopen(fd, 'wb') as f:
+                f.write(text_data)
+
+            result = subprocess.run(
+                ['notepad.exe', '/pt', tmp_path, printer],
+                capture_output=True,
+                timeout=20,
+            )
+
+            if result.returncode == 0:
+                logger.warning(f'[_send_text_to_windows_printer] fallback notepad OK en {printer}')
+                return printer
+
+            detalle = (result.stderr or result.stdout).decode(errors='ignore').strip()
+            raise RuntimeError(detalle or 'fallo notepad /pt')
+        except Exception as e:
+            raise RuntimeError(
+                f'Error enviando texto a impresora Windows "{printer}": {last_error}; '
+                f'fallback notepad fallo: {e}'
+            )
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+        return printer
+
+    def _send_raw_to_linux_printer(self, data):
+        cmd = ['lp']
+        if self.printer_name:
+            cmd.extend(['-d', self.printer_name])
+        cmd.extend(['-o', 'raw', '-t', 'PDV Ticket'])
+
+        try:
+            result = subprocess.run(cmd, input=data, capture_output=True, timeout=10)
+        except FileNotFoundError:
+            raise RuntimeError('No se encontro el comando lp (CUPS).')
+        except Exception as e:
+            raise RuntimeError(f'Error enviando a CUPS: {e}')
+
+        if result.returncode != 0:
+            detalle = (result.stderr or result.stdout).decode(errors='ignore').strip()
+            raise RuntimeError(f'Error enviando a impresora Linux: {detalle or "desconocido"}')
+
+        return self.printer_name or 'default (CUPS)'
+
+    def _send_text_to_linux_printer(self, text_data):
+        cmd = ['lp']
+        if self.printer_name:
+            cmd.extend(['-d', self.printer_name])
+        cmd.extend(['-t', 'PDV Ticket'])
+
+        try:
+            result = subprocess.run(cmd, input=text_data, capture_output=True, timeout=10)
+        except FileNotFoundError:
+            raise RuntimeError('No se encontro el comando lp (CUPS).')
+        except Exception as e:
+            raise RuntimeError(f'Error enviando texto a CUPS: {e}')
+
+        if result.returncode != 0:
+            detalle = (result.stderr or result.stdout).decode(errors='ignore').strip()
+            raise RuntimeError(f'Error enviando a impresora Linux: {detalle or "desconocido"}')
+
+        return self.printer_name or 'default (CUPS)'
+
+    def _looks_like_escpos_printer(self):
+        if not self.printer_name:
+            return True
+        name = self.printer_name.lower()
+        escpos_hints = ['tm-', 'epson tm', 'pos', 'thermal', 'ticket', '80mm', '58mm', 'xp-']
+        return any(h in name for h in escpos_hints)
+
+    def _build_text_ticket_data(self, lineas):
+        # Texto simple para impresoras de oficina (ej. Epson L355), sin comandos ESC/POS.
+        text = '\r\n'.join(linea.rstrip('\n') for linea in lineas) + '\r\n\r\n'
+        return text.encode('cp1252', errors='replace')
+
+    def _send_text_data(self, text_data, etiqueta=''):
+        sistema = platform.system()
+        if _is_wsl():
+            raise RuntimeError('Impresion por texto no soportada en WSL. Ejecuta el servidor en Windows.')
+        if sistema == 'Windows':
+            destino = self._send_text_to_windows_printer(text_data)
+            logger.warning(f'[_send_text_data{etiqueta}] enviado texto a impresora Windows: {destino}')
+            return destino
+        destino = self._send_text_to_linux_printer(text_data)
+        logger.warning(f'[_send_text_data{etiqueta}] enviado texto a impresora Linux: {destino}')
+        return destino
+
+    def _send_raw_data(self, data, etiqueta=''):
+        sistema = platform.system()
+
+        if self._is_local_printer_mode():
+            if _is_wsl():
+                raise RuntimeError('Impresion por nombre no soportada en WSL. Usa servidor en Windows o IP de impresora de red.')
+            if sistema == 'Windows':
+                destino = self._send_raw_to_windows_printer(data)
+                logger.warning(f'[_send_raw_data{etiqueta}] enviado a impresora Windows: {destino}')
+                return destino
+            destino = self._send_raw_to_linux_printer(data)
+            logger.warning(f'[_send_raw_data{etiqueta}] enviado a impresora Linux: {destino}')
+            return destino
+
+        _enviar_tcp(data, ip=self.ip, etiqueta=etiqueta)
+        return f'POS-80C ({self.ip}:{PUERTO_IMPRESORA})'
 
     def check_connectivity(self, timeout=1):
+        if self._is_local_printer_mode():
+            disponibles = self.list_printers() or []
+            # Try exact match first, then substring match to be tolerant with driver names
+            for p in disponibles:
+                if p.lower() == self.printer_name.lower():
+                    self.printer_name = p
+                    return True
+            for p in disponibles:
+                if self.printer_name.lower() in p.lower() or p.lower() in self.printer_name.lower():
+                    self.printer_name = p
+                    return True
+            return False
+
         import socket
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -92,6 +275,42 @@ class LocalPrinterService:
             return []
 
     def _print_escpos(self, lineas, etiqueta=''):
+        logger.warning(f'[_print_escpos{etiqueta}] printer_name={self.printer_name}')
+
+        # If a local/system printer was selected and it exists in the OS printer list,
+        # prefer sending a plain text spool job (better for inkjet drivers like Epson L355).
+        if self._is_local_printer_mode():
+            try:
+                disponibles = self.list_printers() or []
+            except Exception as e:
+                logger.warning(f'[_print_escpos{etiqueta}] error list_printers: {e}')
+                disponibles = []
+
+            # Normalize to actual available printer name if we can match (exact or substring)
+            matched = None
+            for p in disponibles:
+                if p.lower() == (self.printer_name or '').lower():
+                    matched = p
+                    break
+            if not matched:
+                for p in disponibles:
+                    if (self.printer_name or '').lower() in p.lower() or p.lower() in (self.printer_name or '').lower():
+                        matched = p
+                        break
+
+            if matched:
+                # update the printer_name to the canonical OS name
+                self.printer_name = matched
+                text_data = self._build_text_ticket_data(lineas)
+                logger.warning(f'[_print_escpos{etiqueta}] impresora sistema encontrada, usando spool de texto: {self.printer_name}')
+                return self._send_text_data(text_data, etiqueta=etiqueta)
+
+            # If printer_name looks like an ESC/POS device we'll continue with escpos path.
+            if not self._looks_like_escpos_printer():
+                text_data = self._build_text_ticket_data(lineas)
+                logger.warning(f'[_print_escpos{etiqueta}] impresora no ESC/POS detectada por nombre, usando spool de texto')
+                return self._send_text_data(text_data, etiqueta=etiqueta)
+
         buf = EscposBuffer()
         buf._buf.extend(b'\x1b\x74\x10')
         buf.set(align='left', bold=False)
@@ -101,8 +320,8 @@ class LocalPrinterService:
         buf._buf.extend(b'\x1b\x64\x04\x1b\x69')
         data = b'\x1b\x40' + buf.build()
         logger.warning(f'[_print_escpos{etiqueta}] buffer: {len(data)} bytes, primeras 3 lineas: {lineas[:3]}')
-        _enviar_tcp(data, ip=self.ip, etiqueta=etiqueta)
-        return f'POS-80C ({self.ip}:{PUERTO_IMPRESORA})'
+        destino = self._send_raw_data(data, etiqueta=etiqueta)
+        return destino
 
     def _imprimir_html(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
         from .ticket_formatter import TicketFormatter
@@ -133,6 +352,8 @@ class LocalPrinterService:
 
     def print_ticket(self, pedido):
         if not self.check_connectivity():
+            if self._is_local_printer_mode():
+                raise RuntimeError(f'Impresora local no disponible: {self.printer_name}')
             raise RuntimeError(f'Impresora no disponible en {self.ip}')
         categorias = self._categorias_en_pedido(pedido)
         logger.warning(f'[print_ticket #{pedido.id}] categorias={categorias}, total_lineas={pedido.lineas.count()}')
@@ -189,7 +410,10 @@ class LocalPrinterService:
         elif is_wsl:
             return self._get_windows_printers_via_powershell()
         else:
-            resultado = subprocess.run(['lpstat', '-p'], capture_output=True, text=True)
+            try:
+                resultado = subprocess.run(['lpstat', '-p'], capture_output=True, text=True, timeout=10)
+            except Exception:
+                return []
             if resultado.returncode == 0:
                 lineas = resultado.stdout.strip().split('\n')
                 return [l.split()[1] for l in lineas if 'printer' in l]

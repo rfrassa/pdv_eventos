@@ -79,6 +79,9 @@
                 <div class="pay-remainder">
                     Restante: <span id="pay-remainder">$0.00</span>
                 </div>
+                <div style="font-size:0.72rem;color:var(--text-light);margin-top:6px">
+                    Atajos: F1-F6 o A/S/D/F/G/H, Tab navegar, Enter confirmar, Esc cerrar
+                </div>
             </div>
             <div class="pay-top-confirm">
                 <button class="btn-confirm-payment" id="btn-confirm-payment" disabled onclick="confirmarPago()">CONFIRMAR PAGO</button>
@@ -164,6 +167,7 @@
             navigator.serviceWorker.register('/static/pwa/sw.js');
         }
     </script>
+    <script src="/static/pwa/pdv-config.js"></script>
     <script src="/static/pwa/app.js"></script>
 </body>
 </html>
