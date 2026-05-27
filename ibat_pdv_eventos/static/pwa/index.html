@@ -84,7 +84,10 @@
                 </div>
             </div>
             <div class="pay-top-confirm">
-                <button class="btn-confirm-payment" id="btn-confirm-payment" disabled onclick="confirmarPago()">CONFIRMAR PAGO</button>
+                <div style="display:flex;gap:8px">
+                    <button class="btn-confirm-payment" id="btn-confirm-payment" disabled onclick="confirmarPago()">CONFIRMAR PAGO</button>
+                    <button class="btn-resume-order" id="btn-print-after" onclick="togglePrintAfterConfirm()" title="Marcar para imprimir automáticamente al confirmar">Imprimir Web</button>
+                </div>
             </div>
         </div>
         <div class="pay-bottom">

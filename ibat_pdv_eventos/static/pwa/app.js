@@ -31,6 +31,8 @@ let state = {
     detallePedidoId: null,
     printerName: localStorage.getItem('pdv_printer') || '',
     impresoras: [],
+    print_after_confirm: true,
+    print_split_by_category: true,
 };
 
 function isTypingTarget(el) {
@@ -126,6 +128,18 @@ async function init() {
         document.getElementById('evento-nombre').textContent = state.evento.nombre || 'PDV Eventos';
         document.getElementById('btn-pdv-select').innerHTML = state.pdvActual.nombre + ' <span class="badge-pendientes" id="badge-pendientes">0</span>';
         document.getElementById('btn-guardar-label').textContent = 'GUARDAR';
+
+        // Inicializar estado del boton imprimir al confirmar
+        const printBtn = document.getElementById('btn-print-after');
+        if (printBtn) {
+            if (state.print_after_confirm) {
+                printBtn.classList.add('active');
+                printBtn.textContent = 'Imprimir al confirmar (ON)';
+            } else {
+                printBtn.classList.remove('active');
+                printBtn.textContent = 'Imprimir Web';
+            }
+        }
 
         renderCategorias();
         renderProductos();
@@ -566,7 +580,17 @@ async function confirmarPago() {
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
+        // Si el usuario marcó imprimir después de confirmar, usar impresión por navegador
+        if (state.print_after_confirm) {
+            setTimeout(() => {
+                imprimirTicketNavegador(pedidoCreado.id);
+                state.print_after_confirm = false;
+                const btn = document.getElementById('btn-print-after');
+                if (btn) btn.classList.remove('active');
+            }, 500);
+        } else {
+            setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
+        }
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
     }
@@ -881,11 +905,11 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
             <html>
             <head>
                 <style>
-                    body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; width: 80mm; margin: 0 auto; padding: 10px; }
-                    .header { text-align: center; font-weight: bold; font-size: 16px; margin: 0 0 2px; }
+                    body { font-family: Arial, Helvetica, sans-serif; font-size: 16px; width: 80mm; margin: 0 auto; padding: 10px; }
+                    .header { text-align: center; font-weight: bold; font-size: 20px; margin: 0 0 2px; }
                     .subheader { text-align: center; font-weight: bold; font-size: 18px; margin: 0 0 6px; }
-                    .evento { text-align: center; font-size: 15px; margin: 4px 0; }
-                    .info { font-size: 13px; margin-bottom: 8px; }
+                    .evento { text-align: center; font-size: 16px; margin: 4px 0; }
+                    .info { font-size: 14px; margin-bottom: 8px; }
                     @media print {
                         @page { margin: 0; size: 80mm auto; }
                         body { margin: 0; padding: 5mm; }
@@ -895,7 +919,7 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
             <body>
                 <div class="header">CENTRO DE ESTUDIANTES</div>
                 <div class="subheader">IBAT San José</div>
-                <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
+                <div class="center" style="font-size:18px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
                 ${etiquetaHtml}
                 <div class="info">
                     PDV: ${pdv} | ${ticketId}<br>
@@ -940,19 +964,19 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
         <html>
         <head>
             <style>
-                body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; width: 80mm; margin: 0 auto; padding: 10px; }
-                .header { text-align: center; font-weight: bold; font-size: 16px; margin: 0 0 2px; }
+                body { font-family: Arial, Helvetica, sans-serif; font-size: 16px; width: 80mm; margin: 0 auto; padding: 10px; }
+                .header { text-align: center; font-weight: bold; font-size: 20px; margin: 0 0 2px; }
                 .subheader { text-align: center; font-weight: bold; font-size: 18px; margin: 0 0 6px; }
-                .evento { text-align: center; font-size: 15px; margin: 4px 0; }
-                .info { font-size: 13px; margin-bottom: 8px; }
+                .evento { text-align: center; font-size: 16px; margin: 4px 0; }
+                .info { font-size: 14px; margin-bottom: 8px; }
                 table { width: 100%; border-collapse: collapse; }
-                td { padding: 4px 0; font-size: 14px; }
+                td { padding: 4px 0; font-size: 15px; }
                 .sep { border-top: 1px dashed #000; }
                 .total { font-weight: bold; font-size: 18px; }
                 .total td { padding: 6px 0; }
                 .center { text-align: center; }
                 .footer { text-align: center; font-size: 13px; margin-top: 8px; }
-                .brand { text-align: center; font-size: 11px; color: #555; margin-top: 2px; }
+                .brand { text-align: center; font-size: 12px; color: #555; margin-top: 2px; }
                 @media print {
                     @page { margin: 0; size: 80mm auto; }
                     body { margin: 0; padding: 5mm; }
@@ -996,8 +1020,20 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + qrData;
 
     let lineasHtml = '';
+    const target = (categoriaNombre || '').toString().toLowerCase().trim();
     pedido.lineas.forEach(l => {
-        if (l.categoria_nombre !== categoriaNombre) return;
+        const ln = (l.categoria_nombre || '').toString().toLowerCase().trim();
+
+        // Matching tolerant: exact, substring or viceversa
+        let matched = false;
+        if (target && ln) {
+            if (ln === target) matched = true;
+            else if (ln.includes(target)) matched = true;
+            else if (target.includes(ln)) matched = true;
+        }
+
+        if (!matched) return;
+
         const nota = l.nota ? '<br><small>(' + l.nota + ')</small>' : '';
         lineasHtml += '<div style="padding:4px 0;font-size:14px">' + l.cantidad + 'x ' + l.producto_nombre + nota + '</div>';
     });
@@ -1007,11 +1043,11 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
         <html>
         <head>
             <style>
-                body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; width: 80mm; margin: 0 auto; padding: 10px; }
-                .header { text-align: center; font-weight: bold; font-size: 16px; margin: 0 0 2px; }
+                body { font-family: Arial, Helvetica, sans-serif; font-size: 16px; width: 80mm; margin: 0 auto; padding: 10px; }
+                .header { text-align: center; font-weight: bold; font-size: 20px; margin: 0 0 2px; }
                 .subheader { text-align: center; font-weight: bold; font-size: 18px; margin: 0 0 6px; }
-                .evento { text-align: center; font-size: 15px; margin: 4px 0; }
-                .info { font-size: 13px; margin-bottom: 8px; }
+                .evento { text-align: center; font-size: 16px; margin: 4px 0; }
+                .info { font-size: 14px; margin-bottom: 8px; }
                 @media print {
                     @page { margin: 0; size: 80mm auto; }
                     body { margin: 0; padding: 5mm; }
@@ -1041,12 +1077,79 @@ function openPrintWindow(html) {
     ventana.document.write(html);
     ventana.document.close();
     ventana.focus();
-    setTimeout(() => { ventana.print(); }, 500);
+    setTimeout(() => {
+        try {
+            ventana.print();
+        } catch (e) {
+            console.warn('print() failed:', e);
+        }
+        // Intentar cerrar la ventana tras imprimir (funciona si la ventana fue abierta por script)
+        setTimeout(() => {
+            try { ventana.close(); } catch (e) { /* ignore */ }
+        }, 800);
+    }, 500);
 }
 
 async function imprimirTicketNavegador(id) {
     try {
         const pedido = await apiFetch('/api/pedidos/' + id + '/');
+        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
+
+        // Imprimir ticket completo siempre
+        const htmlCompleto = buildTicketHtml(pedido);
+        if (htmlCompleto) openPrintWindow(htmlCompleto);
+
+        // Si está configurado, además imprimir comandas separadas por cada categoría
+        if (state.print_split_by_category) {
+            Array.from(categorias).forEach(cat => {
+                const sufijo = (cat && typeof cat === 'string' && cat.length > 0) ? cat.trim()[0].toUpperCase() : '';
+                const etiqueta = cat ? cat.toUpperCase() : '';
+                const htmlCat = buildComandaHtml(pedido, cat, etiqueta, sufijo);
+                if (htmlCat) openPrintWindow(htmlCat);
+            });
+        } else {
+            // Compatibilidad: si no está el flag, seguir con comportamiento antiguo específico para Comidas/Bebidas
+            if (categorias.has('Comidas')) {
+                const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+                if (htmlComidas) openPrintWindow(htmlComidas);
+            }
+            if (categorias.has('Bebidas')) {
+                const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+                if (htmlBebidas) openPrintWindow(htmlBebidas);
+            }
+        }
+    } catch (e) {
+        showNotification('Error al preparar impresión: ' + e.message, 'error');
+    }
+}
+
+// --- IMPRIMIR TICKET DESDE EL ESTADO (ticket en memoria) ---
+function imprimirTicketDesdeEstado() {
+    if (!state.ticket || state.ticket.length === 0) {
+        showNotification('El ticket está vacío', 'error');
+        return;
+    }
+
+    // Construir un objeto pedido temporal similar al API
+    const pedido = {
+        id: 'TEMP',
+        punto_venta_nombre: state.pdvActual ? state.pdvActual.nombre : '',
+        creado: new Date().toISOString(),
+        lineas: state.ticket.map(l => {
+            const prod = state.productos.find(p => p.id === l.producto) || {};
+            return {
+                cantidad: l.cantidad,
+                producto_nombre: l.producto_nombre,
+                precio_unitario: l.precio_unitario,
+                nota: l.nota || '',
+                categoria_nombre: prod.categoria_nombre || ''
+            };
+        }),
+        total_final: state.ticket.reduce((s, l) => s + l.cantidad * l.precio_unitario, 0),
+        pagos: []
+    };
+
+    try {
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
 
         const htmlCompleto = buildTicketHtml(pedido);
@@ -1063,6 +1166,22 @@ async function imprimirTicketNavegador(id) {
         }
     } catch (e) {
         showNotification('Error al preparar impresión: ' + e.message, 'error');
+    }
+}
+
+function togglePrintAfterConfirm() {
+    state.print_after_confirm = !state.print_after_confirm;
+    const btn = document.getElementById('btn-print-after');
+    if (btn) {
+        if (state.print_after_confirm) {
+            btn.classList.add('active');
+            btn.textContent = 'Imprimir al confirmar (ON)';
+            showNotification('Se imprimirá automáticamente al confirmar el pago');
+        } else {
+            btn.classList.remove('active');
+            btn.textContent = 'Imprimir Web';
+            showNotification('Impresión automática al confirmar desactivada', 'warning');
+        }
     }
 }
 
