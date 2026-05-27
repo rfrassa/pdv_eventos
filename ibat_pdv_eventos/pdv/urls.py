@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/pedidos/<int:pedido_id>/', views.pedido_detail, name='pedido-detail'),
     path('api/pedidos/<int:pedido_id>/reimprimir/', views.pedido_reimprimir, name='pedido-reimprimir'),
     path('api/pedidos/<int:pedido_id>/imprimir-local/', views.pedido_imprimir_local, name='pedido-imprimir-local'),
+    path('api/pedidos/<int:pedido_id>/imprimir-pdf/', views.pedido_imprimir_pdf, name='pedido-imprimir-pdf'),
     path('api/test-print/', views.test_print, name='test-print'),
     path('api/impresoras/', views.impresoras_disponibles, name='impresoras-disponibles'),
     path('api/cierre-caja/', views.cierre_caja, name='cierre-caja'),

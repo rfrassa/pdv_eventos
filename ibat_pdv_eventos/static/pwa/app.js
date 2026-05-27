@@ -1,4 +1,4 @@
-const API_BASE = '';
+const API_BASE = (window.PDV_CONFIG && window.PDV_CONFIG.apiBase) || '';
 const METODOS_PAGO = [
     { id: 'EF', label: 'Efectivo', icon: '💵' },
     { id: 'TC', label: 'Tarjeta crédito', icon: '💳' },
@@ -6,6 +6,15 @@ const METODOS_PAGO = [
     { id: 'TR', label: 'Transferencia/QR', icon: '📱' },
     { id: 'CU', label: 'Cuenta corriente', icon: '📋' },
     { id: 'OT', label: 'Otro', icon: '🧾' },
+];
+
+const PAYMENT_SHORTCUTS = [
+    { key: 'F1', alt: 'A', methodId: 'EF' },
+    { key: 'F2', alt: 'S', methodId: 'TC' },
+    { key: 'F3', alt: 'D', methodId: 'TD' },
+    { key: 'F4', alt: 'F', methodId: 'TR' },
+    { key: 'F5', alt: 'G', methodId: 'CU' },
+    { key: 'F6', alt: 'H', methodId: 'OT' },
 ];
 
 let state = {
@@ -19,9 +28,28 @@ let state = {
     evento: null,
     pagos: [],
     metodoSeleccionado: null,
+    detallePedidoId: null,
     printerName: localStorage.getItem('pdv_printer') || '',
     impresoras: [],
 };
+
+function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function printActiveContext() {
+    if (state.detallePedidoId) {
+        imprimirEnPC(state.detallePedidoId);
+        return;
+    }
+    if (state.pedidoEditando) {
+        imprimirEnPC(state.pedidoEditando);
+        return;
+    }
+    showNotification('Abrí el detalle de un pedido para imprimir rápido', 'warning');
+}
 
 function getCsrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
@@ -235,6 +263,8 @@ function renderTicket() {
         html = '<div class="empty-state" style="padding:16px">El ticket está vacío</div>';
     }
 
+    body.innerHTML = html;
+
     const totalStr = formatPrice(subtotal);
     total.textContent = totalStr;
     if (topTotal) topTotal.textContent = totalStr;
@@ -351,12 +381,14 @@ function renderMetodosPago() {
     const container = document.getElementById('payment-methods');
     const remainder = getRemainder();
     let html = '';
-    METODOS_PAGO.forEach(m => {
+    METODOS_PAGO.forEach((m, idx) => {
+        const sc = PAYMENT_SHORTCUTS[idx];
         const usado = state.pagos.find(p => p.metodo === m.id);
         html += `
             <button class="pay-method-btn ${state.metodoSeleccionado === m.id ? 'selected' : ''}"
                 onclick="seleccionarMetodo('${m.id}')"
                 ${remainder <= 0 ? 'disabled' : ''}>
+                <span class="pay-method-hotkey">${sc ? sc.key : ''}</span>
                 ${m.icon}<br>${m.label}
             </button>
         `;
@@ -681,6 +713,7 @@ async function toggleDetalle(id) {
         return;
     }
     overlay.classList.add('open');
+    state.detallePedidoId = id;
     title.textContent = 'Pedido #' + id;
     body.innerHTML = '<div class="empty-state">Cargando...</div>';
 
@@ -752,6 +785,7 @@ async function toggleDetalle(id) {
             </div>` : ''}
             <div style="display:flex;gap:8px;margin-top:16px">
                 <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirEnPC(${p.id})">Imprimir</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="window.open(API_BASE + '/api/pedidos/' + ${p.id} + '/imprimir-pdf/', '_blank')">PDF</button>
                 <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirTicketNavegador(${p.id})">Imprimir Navegador</button>
             </div>
         `;
@@ -762,6 +796,7 @@ async function toggleDetalle(id) {
 
 function cerrarDetalle() {
     document.getElementById('detalle-overlay').classList.remove('open');
+    state.detallePedidoId = null;
 }
 
 // --- IMPRIMIR POR SERVIDOR (PC) ---
@@ -772,12 +807,14 @@ async function imprimirEnPC(id) {
             body: JSON.stringify({ printer_name: state.printerName || undefined }),
         });
         if (res.ok === false) {
-            showNotification('⚠️ Pedido guardado. ' + (res.error || 'Impresora no disponible'), 'warning');
+            showNotification('⚠️ Impresión local falló. Se abre impresión del navegador.', 'warning');
+            imprimirTicketNavegador(id);
         } else {
             showNotification('✅ Ticket enviado a: ' + res.impresora);
         }
     } catch (e) {
-        showNotification('Error de impresión: ' + e.message, 'error');
+        showNotification('⚠️ Error de impresión local. Se abre impresión del navegador.', 'warning');
+        imprimirTicketNavegador(id);
     }
 }
 
@@ -1051,14 +1088,61 @@ function toggleSidebar() {
 // --- KEYBOARD NAV ---
 document.addEventListener('keydown', function(e) {
     const overlay = document.getElementById('payment-overlay');
-    if (!overlay || !overlay.classList.contains('open')) return;
+    const paymentOpen = overlay && overlay.classList.contains('open');
+    const key = e.key.toLowerCase();
+
+    if (!paymentOpen && !isTypingTarget(e.target) && e.altKey) {
+        if (key === 'n') {
+            e.preventDefault();
+            nuevoTicket();
+        } else if (key === 'g') {
+            e.preventDefault();
+            guardarPedido();
+        } else if (key === 'c') {
+            e.preventDefault();
+            abrirPago();
+        } else if (key === 'o') {
+            e.preventDefault();
+            toggleOrders();
+        } else if (key === 'h') {
+            e.preventDefault();
+            toggleHistorial();
+        } else if (key === 'i') {
+            e.preventDefault();
+            selectPrinter();
+        } else if (key === 'p') {
+            e.preventDefault();
+            printActiveContext();
+        }
+        return;
+    }
+
+    if (!paymentOpen) return;
 
     const input = document.getElementById('pay-amount-input');
     const recibido = document.getElementById('pay-recibido-input');
     const agregarBtn = document.querySelector('.btn-add-payment');
     const confirmarBtn = document.getElementById('btn-confirm-payment');
 
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        cerrarPago();
+        return;
+    }
+
+    const shortcut = PAYMENT_SHORTCUTS.find(s => s.key.toLowerCase() === key || s.alt.toLowerCase() === key);
+    if (shortcut) {
+        e.preventDefault();
+        seleccionarMetodo(shortcut.methodId);
+        return;
+    }
+
     if (e.key === 'Enter') {
+        if (state.metodoSeleccionado && input.value) {
+            e.preventDefault();
+            agregarPago();
+            return;
+        }
         const el = document.activeElement;
         if (el === input || el === recibido || el === agregarBtn) {
             e.preventDefault();
@@ -1067,6 +1151,12 @@ document.addEventListener('keydown', function(e) {
             e.preventDefault();
             confirmarPago();
         }
+        return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && key === 'backspace') {
+        e.preventDefault();
+        limpiarPagos();
         return;
     }
 
