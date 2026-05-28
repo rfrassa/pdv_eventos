@@ -1095,29 +1095,46 @@ async function imprimirTicketNavegador(id) {
         const pedido = await apiFetch('/api/pedidos/' + id + '/');
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
 
-        // Imprimir ticket completo siempre
+        // Construir un único documento que contenga el ticket completo y (si aplica)
+        // las comandas por categoría, separadas por saltos de página, para evitar
+        // abrir múltiples ventanas y diálogos de impresión.
+        const htmlParts = [];
         const htmlCompleto = buildTicketHtml(pedido);
-        if (htmlCompleto) openPrintWindow(htmlCompleto);
+        if (htmlCompleto) htmlParts.push(htmlCompleto);
 
-        // Si está configurado, además imprimir comandas separadas por cada categoría
         if (state.print_split_by_category) {
             Array.from(categorias).forEach(cat => {
                 const sufijo = (cat && typeof cat === 'string' && cat.length > 0) ? cat.trim()[0].toUpperCase() : '';
                 const etiqueta = cat ? cat.toUpperCase() : '';
                 const htmlCat = buildComandaHtml(pedido, cat, etiqueta, sufijo);
-                if (htmlCat) openPrintWindow(htmlCat);
+                if (htmlCat) htmlParts.push(htmlCat);
             });
         } else {
-            // Compatibilidad: si no está el flag, seguir con comportamiento antiguo específico para Comidas/Bebidas
             if (categorias.has('Comidas')) {
                 const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
-                if (htmlComidas) openPrintWindow(htmlComidas);
+                if (htmlComidas) htmlParts.push(htmlComidas);
             }
             if (categorias.has('Bebidas')) {
                 const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-                if (htmlBebidas) openPrintWindow(htmlBebidas);
+                if (htmlBebidas) htmlParts.push(htmlBebidas);
             }
         }
+
+        if (htmlParts.length === 0) return;
+
+        // Normalizar: cada parte puede ser un documento completo (<html>...</html>).
+        // Extraer el body de cada parte y concatenar con un separador de página.
+        const combinedBodies = htmlParts.map(part => {
+            const bodyMatch = part.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+            return bodyMatch ? bodyMatch[1] : part;
+        }).join('<div style="page-break-after: always;"></div>');
+
+        // Usar el head (estilos) del primer documento como referencia.
+        const headMatch = htmlParts[0].match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+        const headHtml = headMatch ? headMatch[1] : '';
+
+        const combinedHtml = `<html><head>${headHtml}</head><body>${combinedBodies}</body></html>`;
+        openPrintWindow(combinedHtml);
     } catch (e) {
         showNotification('Error al preparar impresión: ' + e.message, 'error');
     }
@@ -1152,18 +1169,30 @@ function imprimirTicketDesdeEstado() {
     try {
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
 
+        const htmlParts = [];
         const htmlCompleto = buildTicketHtml(pedido);
-        if (htmlCompleto) openPrintWindow(htmlCompleto);
+        if (htmlCompleto) htmlParts.push(htmlCompleto);
 
         if (categorias.has('Comidas')) {
             const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
-            if (htmlComidas) openPrintWindow(htmlComidas);
+            if (htmlComidas) htmlParts.push(htmlComidas);
         }
 
         if (categorias.has('Bebidas')) {
             const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-            if (htmlBebidas) openPrintWindow(htmlBebidas);
+            if (htmlBebidas) htmlParts.push(htmlBebidas);
         }
+
+        if (htmlParts.length === 0) return;
+
+        const combinedBodies = htmlParts.map(part => {
+            const bodyMatch = part.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+            return bodyMatch ? bodyMatch[1] : part;
+        }).join('<div style="page-break-after: always;"></div>');
+        const headMatch = htmlParts[0].match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+        const headHtml = headMatch ? headMatch[1] : '';
+        const combinedHtml = `<html><head>${headHtml}</head><body>${combinedBodies}</body></html>`;
+        openPrintWindow(combinedHtml);
     } catch (e) {
         showNotification('Error al preparar impresión: ' + e.message, 'error');
     }
