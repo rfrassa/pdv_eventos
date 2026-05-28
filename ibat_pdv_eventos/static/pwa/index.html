@@ -42,18 +42,47 @@
             <span class="header-pdv" id="btn-pdv-select" onclick="toggleOrders()">PDV 1 <span class="badge-pendientes" id="badge-pendientes">0</span></span>
         </header>
 
-        <div class="top-actions">
-            <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
-            <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label">GUARDAR</span></button>
-            <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
-            <span class="top-total" id="top-total">$0.00</span>
-        </div>
+        <div class="app-shell">
+            <main class="left-col">
+                <div class="top-actions">
+                    <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
+                    <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label">GUARDAR</span></button>
+                    <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
+                    <button class="btn-sm" id="toggle-order-list">LISTA</button>
+                    <button class="btn-sm" id="toggle-compact">COMPACT</button>
+                    <span class="top-total" id="top-total">$0.00</span>
+                </div>
 
-        <div class="categories" id="categories"></div>
+                <div class="categories" id="categories"></div>
 
-        <div class="products-area" id="products-area">
-            <div class="empty-state" id="loading">Cargando productos...</div>
-            <div class="products-grid" id="products-grid"></div>
+                <div class="products-area" id="products-area">
+                    <div class="empty-state" id="loading">Cargando productos...</div>
+                    <div class="products-grid" id="products-grid"></div>
+                </div>
+                <div class="ticket-bar collapsed" id="ticket-bar">
+                    <div class="ticket-summary" onclick="toggleTicket()">
+                        <span class="ticket-count" id="ticket-count">0 productos</span>
+                        <span class="ticket-total" id="ticket-total">$0.00</span>
+                    </div>
+                    <div class="ticket-body" id="ticket-body"></div>
+                </div>
+            </main>
+
+            <aside class="order-list collapsed" id="order-list">
+                <div class="order-list-header">
+                    <button class="btn-back" id="toggle-order-list-close">&larr;</button>
+                    <div style="margin-left:8px">
+                        <div class="ticket-count" id="ticket-count-side">0 productos</div>
+                        <div class="ticket-total" id="ticket-total-side">$0.00</div>
+                    </div>
+                </div>
+                <div class="order-list-body" id="ticket-body-side"></div>
+                <div class="order-list-actions">
+                    <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
+                    <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label-side">GUARDAR</span></button>
+                    <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
+                </div>
+            </aside>
         </div>
 
         <div class="ticket-bar collapsed" id="ticket-bar">

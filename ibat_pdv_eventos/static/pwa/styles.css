@@ -39,10 +39,80 @@ button {
     height: 100%;
     display: flex;
     flex-direction: column;
+    width: 100%;
     max-width: 480px;
     margin: 0 auto;
     position: relative;
 }
+
+/* Two-column shell for larger screens */
+.app-shell {
+    display: block;
+}
+
+@media (min-width: 900px) {
+    #app {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0 12px;
+    }
+    .app-shell {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 12px;
+        height: calc(100vh - 72px);
+        padding: 12px;
+    }
+    .left-col {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+    .products-area { padding-bottom: 24px; }
+    .order-list {
+        background: var(--card);
+        border-left: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .order-list.collapsed { transform: translateX(100%); width: 0; visibility: hidden; }
+    .order-list-header {
+        display:flex; align-items:center; gap:8px; padding:12px; border-bottom:1px solid var(--border);
+    }
+    .order-list-body { overflow-y:auto; padding:12px; }
+    .order-list-actions { padding:12px; display:flex; gap:8px; }
+}
+
+/* On desktop show side list and hide mobile ticket bar */
+@media (min-width: 900px) {
+    .ticket-bar { display: none; }
+    .order-list.collapsed { transform: none; width: auto; visibility: visible; }
+}
+
+@media (min-width: 900px) {
+    /* place ticket-bar statically inside left column */
+    .ticket-bar {
+        display: block;
+        position: static;
+        margin-top: 12px;
+        width: auto;
+        max-width: none;
+        transform: none;
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        background: var(--card);
+    }
+    .products-area { flex: 1 1 auto; }
+}
+
+/* Compact mode: smaller paddings for dense lists */
+.compact .product-card, .compact .order-card, .compact .ticket-line { padding: 8px; }
+.compact .product-name { font-size: 0.85rem; }
+.compact .ticket-line-name { font-size: 0.8rem; }
 
 /* HEADER */
 .header {
