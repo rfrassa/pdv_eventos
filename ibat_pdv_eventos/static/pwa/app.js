@@ -1186,6 +1186,39 @@ document.addEventListener('DOMContentLoaded', function() {
     // Init app
     init();
 
+    // Render force-silent-print toggle in sidebar
+    function isForceSilent() {
+        return localStorage.getItem('force_silent_print') === '1';
+    }
+    function setForceSilent(v) {
+        localStorage.setItem('force_silent_print', v ? '1' : '0');
+        const cb = document.getElementById('force-silent-print-cb');
+        if (cb) cb.checked = !!v;
+    }
+    function renderForceSilentToggle() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+        if (document.getElementById('force-silent-print-wrap')) return; // already added
+        const wrap = document.createElement('div');
+        wrap.id = 'force-silent-print-wrap';
+        wrap.style.padding = '12px';
+        wrap.style.borderTop = '1px solid #eee';
+        wrap.innerHTML = `
+            <label style="display:flex;align-items:center;gap:8px;">
+                <input id="force-silent-print-cb" type="checkbox" />
+                <span style="font-size:0.95rem">Forzar impresión silenciosa (si hay agente)</span>
+            </label>
+        `;
+        sidebar.appendChild(wrap);
+        const cb = document.getElementById('force-silent-print-cb');
+        cb.checked = isForceSilent();
+        cb.addEventListener('change', (e) => {
+            setForceSilent(e.target.checked);
+            showNotification(e.target.checked ? 'Forzar impresión silenciosa activada' : 'Forzar impresión silenciosa desactivada');
+        });
+    }
+    renderForceSilentToggle();
+
     // Attach UI toggles for desktop: order list and compact mode
     const toggleOrder = document.getElementById('toggle-order-list');
     toggleOrder?.addEventListener('click', () => {
