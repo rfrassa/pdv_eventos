@@ -539,7 +539,7 @@ async function confirmarPago() {
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
+        setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
     }
@@ -653,7 +653,7 @@ async function toggleHistorial() {
                     </div>
                     <div style="display:flex;gap:6px">
                         <button class="btn-resume-order" onclick="toggleDetalle(${p.id})">Ver</button>
-                        <button class="btn-resume-order" onclick="imprimirEnPC(${p.id})">Imprimir${p.veces_impreso ? ' (' + p.veces_impreso + ')' : ''}</button>
+                        <button class="btn-resume-order" onclick="imprimirTicketNavegador(${p.id})">Imprimir${p.veces_impreso ? ' (' + p.veces_impreso + ')' : ''}</button>
                         <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedidoHistorial(${p.id})">Eliminar</button>
                     </div>
                 </div>
@@ -756,8 +756,8 @@ async function toggleDetalle(id) {
                 ${pagosHtml}
             </div>` : ''}
             <div style="display:flex;gap:8px;margin-top:16px">
-                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirEnPC(${p.id})">Imprimir (Automático)</button>
-                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirEnPC(${p.id})">Imprimir (Automático)</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirTicketNavegador(${p.id})">Imprimir (Automático)</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirTicketNavegador(${p.id})">Imprimir (Automático)</button>
             </div>
         `;
     } catch (e) {
