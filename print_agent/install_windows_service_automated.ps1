@@ -63,27 +63,40 @@ if (-not (Test-Path $NssmExe)) {
     }
 }
 
-if (-not (Test-Path $NssmExe)) {
-    Write-Error "No se encontró nssm.exe en $NssmDir. Copialo manualmente y reejecuta el script."
+if (Test-Path $NssmExe) {
+    $ServiceName = 'PrintAgent'
+    $VenvPython = Join-Path $AgentDir 'venv\\Scripts\\python.exe'
+    $ExeArgs = "-m uvicorn main:app --host 127.0.0.1 --port 34567"
+
+    Write-Host "Instalando servicio $ServiceName con NSSM..."
+    & $NssmExe install $ServiceName $VenvPython $ExeArgs
+    & $NssmExe set $ServiceName AppDirectory $AgentDir
+    & $NssmExe set $ServiceName Start SERVICE_AUTO_START
+
+    Write-Host "Arrancando servicio $ServiceName..."
+    & $NssmExe start $ServiceName
+
+    Write-Host "Comprobando estado del servicio..."
+    Start-Sleep -Seconds 2
+    Get-Service $ServiceName | Format-Table -AutoSize
+
     Pop-Location
-    exit 1
+    Write-Host "Instalación finalizada. NSSM usado para crear servicio `PrintAgent`." -ForegroundColor Green
+} else {
+    # Fallback: crear tarea programada que arranque el agente al iniciar
+    Write-Warning "NSSM no disponible. Se creará una tarea programada como fallback (se ejecutará al iniciar)."
+    $TaskName = 'PrintAgent'
+    $VenvPython = Join-Path $AgentDir 'venv\\Scripts\\python.exe'
+    $Action = "`"$VenvPython`" -m uvicorn main:app --host 127.0.0.1 --port 34567"
+
+    # Crear tarea que se ejecute con la cuenta SYSTEM al inicio
+    $cmd = "schtasks /Create /SC ONSTART /RL HIGHEST /RU SYSTEM /TN $TaskName /TR \"$Action\" /F"
+    Write-Host "Ejecutando: $cmd"
+    cmd.exe /c $cmd
+
+    # Intentar arrancar la tarea ahora
+    cmd.exe /c "schtasks /Run /TN $TaskName" | Out-Null
+
+    Pop-Location
+    Write-Host "Instalación finalizada. Se creó la tarea programada '$TaskName'. Tené en cuenta que la cuenta SYSTEM puede no tener acceso a impresoras instaladas por usuario." -ForegroundColor Yellow
 }
-
-$ServiceName = 'PrintAgent'
-$VenvPython = Join-Path $AgentDir 'venv\Scripts\python.exe'
-$ExeArgs = "-m uvicorn main:app --host 127.0.0.1 --port 34567"
-
-Write-Host "Instalando servicio $ServiceName..."
-& $NssmExe install $ServiceName $VenvPython $ExeArgs
-& $NssmExe set $ServiceName AppDirectory $AgentDir
-& $NssmExe set $ServiceName Start SERVICE_AUTO_START
-
-Write-Host "Arrancando servicio $ServiceName..."
-& $NssmExe start $ServiceName
-
-Write-Host "Comprobando estado del servicio..."
-Start-Sleep -Seconds 2
-Get-Service $ServiceName | Format-Table -AutoSize
-
-Pop-Location
-Write-Host "Instalación finalizada. Si todo salió bien, el servicio arrancará automáticamente en cada inicio." -ForegroundColor Green
