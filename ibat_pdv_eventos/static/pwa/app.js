@@ -197,10 +197,10 @@ function renderTicket() {
     const count = document.getElementById('ticket-count');
     const total = document.getElementById('ticket-total');
     const topTotal = document.getElementById('top-total');
-
     const numItems = state.ticket.reduce((s, l) => s + l.cantidad, 0);
     let editTag = state.pedidoEditando ? ' <span class="detalle-edit-badge">Editando #' + state.pedidoEditando + '</span>' : '';
-    count.innerHTML = numItems + ' producto' + (numItems !== 1 ? 's' : '') + editTag;
+    const countText = numItems + ' producto' + (numItems !== 1 ? 's' : '') + editTag;
+    if (count) count.innerHTML = countText;
 
     let subtotal = 0;
     let html = '';
@@ -228,8 +228,21 @@ function renderTicket() {
     }
 
     const totalStr = formatPrice(subtotal);
-    total.textContent = totalStr;
+    if (total) total.textContent = totalStr;
     if (topTotal) topTotal.textContent = totalStr;
+
+    // Update mobile ticket body
+    if (body) body.innerHTML = html;
+
+    // Update side (desktop) ticket elements if present
+    const countSide = document.getElementById('ticket-count-side');
+    const totalSide = document.getElementById('ticket-total-side');
+    const bodySide = document.getElementById('ticket-body-side');
+    const btnGuardarSide = document.getElementById('btn-guardar-label-side');
+    if (countSide) countSide.innerHTML = countText;
+    if (totalSide) totalSide.textContent = totalStr;
+    if (bodySide) bodySide.innerHTML = html;
+    if (btnGuardarSide) btnGuardarSide.textContent = document.getElementById('btn-guardar-label')?.textContent || 'GUARDAR';
 
     document.documentElement.style.setProperty('--ticket-height',
         (state.ticket.length > 0 ? '180px' : '0px'));
@@ -743,8 +756,8 @@ async function toggleDetalle(id) {
                 ${pagosHtml}
             </div>` : ''}
             <div style="display:flex;gap:8px;margin-top:16px">
-                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirEnPC(${p.id})">Imprimir</button>
-                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirTicketNavegador(${p.id})">Imprimir Navegador</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirEnPC(${p.id})">Imprimir (Automático)</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirEnPC(${p.id})">Imprimir (Automático)</button>
             </div>
         `;
     } catch (e) {
@@ -756,9 +769,53 @@ function cerrarDetalle() {
     document.getElementById('detalle-overlay').classList.remove('open');
 }
 
-// --- IMPRIMIR POR SERVIDOR (PC) ---
+// --- IMPRIMIR: intento agente local (cliente) -> fallback servidor ---
 async function imprimirEnPC(id) {
+    const agentUrl = 'http://127.0.0.1:34567';
     try {
+        // Try to detect local agent
+        let agentAvailable = false;
+        try {
+            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store' });
+            agentAvailable = ping && ping.ok;
+        } catch (_) { agentAvailable = false; }
+
+        // Fetch pedido once (source of truth: backend)
+        const pedido = await apiFetch('/api/pedidos/' + id + '/');
+        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
+
+        const htmls = [];
+        const mainHtml = buildTicketHtml(pedido);
+        if (mainHtml) htmls.push(mainHtml);
+        if (categorias.has('Comidas')) {
+            const htmlC = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+            if (htmlC) htmls.push(htmlC);
+        }
+        if (categorias.has('Bebidas')) {
+            const htmlB = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+            if (htmlB) htmls.push(htmlB);
+        }
+
+        if (agentAvailable && htmls.length > 0) {
+            try {
+                for (const h of htmls) {
+                    const resp = await fetch(agentUrl + '/print/html', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/html' },
+                        body: h,
+                    });
+                    if (!resp.ok) throw new Error('Agent print failed');
+                    // small delay between prints
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                showNotification('✅ Impreso en impresora local (cliente)');
+                return;
+            } catch (err) {
+                console.warn('Local agent printing failed, falling back to server:', err);
+            }
+        }
+
+        // Fallback: send to backend server to handle printing
         const res = await apiFetch('/api/pedidos/' + id + '/imprimir-local/', {
             method: 'POST',
             body: JSON.stringify({ printer_name: state.printerName || undefined }),
@@ -1083,4 +1140,27 @@ document.addEventListener('keydown', function(e) {
     next.focus();
 });
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() {
+    // Init app
+    init();
+
+    // Attach UI toggles for desktop: order list and compact mode
+    const toggleOrder = document.getElementById('toggle-order-list');
+    toggleOrder?.addEventListener('click', () => {
+        document.getElementById('order-list')?.classList.toggle('collapsed');
+    });
+    const toggleOrderClose = document.getElementById('toggle-order-list-close');
+    toggleOrderClose?.addEventListener('click', () => {
+        document.getElementById('order-list')?.classList.add('collapsed');
+    });
+    const toggleCompact = document.getElementById('toggle-compact');
+    toggleCompact?.addEventListener('click', () => {
+        document.documentElement.classList.toggle('compact');
+    });
+    // On desktop, prefer side list visible and hide mobile ticket bar
+    if (window.innerWidth >= 900) {
+        document.getElementById('order-list')?.classList.remove('collapsed');
+        const tb = document.getElementById('ticket-bar');
+        if (tb) tb.style.display = 'none';
+    }
+});

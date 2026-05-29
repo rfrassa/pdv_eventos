@@ -1,0 +1,4 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+# Windows only: pywin32 provides win32print
+pywin32; sys_platform == 'win32'
