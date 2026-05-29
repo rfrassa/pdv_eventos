@@ -769,9 +769,53 @@ function cerrarDetalle() {
     document.getElementById('detalle-overlay').classList.remove('open');
 }
 
-// --- IMPRIMIR POR SERVIDOR (PC) ---
+// --- IMPRIMIR: intento agente local (cliente) -> fallback servidor ---
 async function imprimirEnPC(id) {
+    const agentUrl = 'http://127.0.0.1:34567';
     try {
+        // Try to detect local agent
+        let agentAvailable = false;
+        try {
+            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store' });
+            agentAvailable = ping && ping.ok;
+        } catch (_) { agentAvailable = false; }
+
+        // Fetch pedido once (source of truth: backend)
+        const pedido = await apiFetch('/api/pedidos/' + id + '/');
+        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
+
+        const htmls = [];
+        const mainHtml = buildTicketHtml(pedido);
+        if (mainHtml) htmls.push(mainHtml);
+        if (categorias.has('Comidas')) {
+            const htmlC = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+            if (htmlC) htmls.push(htmlC);
+        }
+        if (categorias.has('Bebidas')) {
+            const htmlB = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+            if (htmlB) htmls.push(htmlB);
+        }
+
+        if (agentAvailable && htmls.length > 0) {
+            try {
+                for (const h of htmls) {
+                    const resp = await fetch(agentUrl + '/print/html', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/html' },
+                        body: h,
+                    });
+                    if (!resp.ok) throw new Error('Agent print failed');
+                    // small delay between prints
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                showNotification('✅ Impreso en impresora local (cliente)');
+                return;
+            } catch (err) {
+                console.warn('Local agent printing failed, falling back to server:', err);
+            }
+        }
+
+        // Fallback: send to backend server to handle printing
         const res = await apiFetch('/api/pedidos/' + id + '/imprimir-local/', {
             method: 'POST',
             body: JSON.stringify({ printer_name: state.printerName || undefined }),

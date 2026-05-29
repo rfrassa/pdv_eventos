@@ -1,0 +1,12 @@
+[Unit]
+Description=Local Print Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/print_agent
+ExecStart=/opt/print_agent/venv/bin/uvicorn main:app --host 127.0.0.1 --port 34567
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
