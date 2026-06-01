@@ -336,9 +336,19 @@ class LocalPrinterService:
         buf.text('\n\n')
         buf.cut()
         data = b'\x1b\x40' + buf.build()
-        # Prefer ESC/POS TCP to configured IP/port when set
-        # If TCP fails or we're on Windows without reachable TCP, send RAW to Windows spool
-        # Try TCP first if ip/puerto configured
+        # Prefer RAW spool on Windows for POS printers to preserve ESC/POS formatting
+        if platform.system() == 'Windows':
+            target_name = (self.printer_name or '').upper()
+            if 'POS' in target_name or 'EPSON' in target_name:
+                try:
+                    logger.info(f'Attempting RAW spool (Windows) for printer: {self.printer_name}')
+                    target = self._send_raw_windows(data, printer_name=self.printer_name)
+                    logger.info(f'RAW spool OK -> {target}')
+                    return target
+                except Exception as e:
+                    logger.warning(f'RAW spool failed for {self.printer_name}: {e}')
+
+        # Prefer ESC/POS TCP to configured IP/port when set (network printers)
         if self.ip:
             try:
                 _enviar_tcp_to(data, self.ip, self.puerto)
@@ -346,7 +356,7 @@ class LocalPrinterService:
             except Exception as e:
                 logger.warning(f'ESC/POS TCP to {self.ip}:{self.puerto} failed: {e}')
 
-        # On Windows, try RAW spool (USB) to preserve ESC/POS control codes
+        # On Windows, try RAW spool as a fallback (if not attempted above)
         if platform.system() == 'Windows':
             try:
                 target = self._send_raw_windows(data, printer_name=self.printer_name)
@@ -354,7 +364,7 @@ class LocalPrinterService:
             except Exception as e:
                 logger.warning(f'RAW spool failed: {e}')
 
-        # Fallback: attempt to send via powershell TCP routine (legacy)
+        # Fallback: attempt to send via legacy TCP/text routine
         try:
             text_lines = [l.rstrip('\n') for l in lineas]
             return self._print_text_via_powershell(text_lines, self.printer_name)
