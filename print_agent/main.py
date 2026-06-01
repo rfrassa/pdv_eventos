@@ -170,6 +170,8 @@ async def ping():
 async def info():
     return JSONResponse({'printer': get_default_printer_name(), 'platform': platform.system()})
 
+
+
 @app.post('/print/raw')
 async def print_raw(request: Request, x_print_token: str = Header(None)):
     check_token(x_print_token)
@@ -212,6 +214,9 @@ async def pair(token: str):
     try:
         with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
             f.write(token)
+        # Update in-memory token so agent accepts it immediately
+        global _TOKEN
+        _TOKEN = token
         return JSONResponse({'ok': True})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

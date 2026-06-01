@@ -16,7 +16,8 @@ class TicketHandler:
             logger.warning(f"PDV {pedido.punto_venta.nombre} sin IP de impresora configurada")
             return False
 
-        printer = LocalPrinterService()
+        # Pass PDV-configured IP to LocalPrinterService so TCP ESC/POS prints target correct device
+        printer = LocalPrinterService(ip=ip)
         success = True
 
         try:
