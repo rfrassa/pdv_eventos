@@ -47,6 +47,62 @@ function formatPrice(n) {
     return '$' + parseFloat(n).toFixed(2);
 }
 
+// Preferencia: usar impresión por navegador al confirmar (default = false).
+// El flujo por defecto será intentar el agente local primero y fallback al navegador.
+function isPreferBrowserPrint() {
+    // Default to false (agent-first) when not set
+    return localStorage.getItem('prefer_browser_print') === '1';
+}
+function setPreferBrowserPrint(v) {
+    localStorage.setItem('prefer_browser_print', v ? '1' : '0');
+}
+
+// Agent URL usado por el frontend para impresión silenciosa
+const AGENT_URL = 'http://127.0.0.1:34567';
+// Token para autorizar peticiones al agente local (escrito en print_agent/agent.token)
+const AGENT_TOKEN = '681c2ea1f0a74d4481ff647cbe42d28d';
+
+// Render agent status indicator in sidebar and keep it updated
+function renderAgentStatus() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    if (document.getElementById('agent-status-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'agent-status-wrap';
+    wrap.style.padding = '12px';
+    wrap.style.borderTop = '1px solid #eee';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    wrap.innerHTML = `
+        <div id="agent-status-dot" style="width:12px;height:12px;border-radius:50%;background:#ccc"></div>
+        <div style="flex:1">
+            <div style="font-size:0.95rem">Agente local</div>
+            <div id="agent-status-text" style="font-size:0.8rem;color:var(--text-light)">sin verificar</div>
+        </div>
+    `;
+    sidebar.appendChild(wrap);
+
+    async function pingAgent() {
+        try {
+            const res = await fetch(AGENT_URL + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
+            if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                document.getElementById('agent-status-dot').style.background = '#2ecc71';
+                document.getElementById('agent-status-text').textContent = data.printer || 'agente activo';
+                return true;
+            }
+        } catch (e) {}
+        document.getElementById('agent-status-dot').style.background = '#e74c3c';
+        document.getElementById('agent-status-text').textContent = 'no responde';
+        return false;
+    }
+
+    // Ping immediately and periodically
+    pingAgent();
+    setInterval(pingAgent, 8000);
+}
+
 // --- INIT ---
 async function init() {
     try {
@@ -540,48 +596,54 @@ async function confirmarPago() {
         state.pedidoEditando = null;
         renderTicket();
         // Prefer silent print via local agent if available; otherwise open browser print
-        (async () => {
-            const agentUrl = 'http://127.0.0.1:34567';
-            let agentAvailable = false;
-            try {
-                const ping = await fetch(agentUrl + '/ping', { cache: 'no-store' });
-                agentAvailable = ping && ping.ok;
-            } catch (_) { agentAvailable = false; }
-
-            const categorias = new Set(pedidoCreado.lineas.map(l => l.categoria_nombre));
-            const htmls = [];
-            const mainHtml = buildTicketHtml(pedidoCreado);
-            if (mainHtml) htmls.push(mainHtml);
-            if (categorias.has('Comidas')) {
-                const htmlC = buildComandaHtml(pedidoCreado, 'Comidas', 'COMIDAS', 'C');
-                if (htmlC) htmls.push(htmlC);
-            }
-            if (categorias.has('Bebidas')) {
-                const htmlB = buildComandaHtml(pedidoCreado, 'Bebidas', 'BEBIDAS', 'B');
-                if (htmlB) htmls.push(htmlB);
-            }
-
-            if (agentAvailable && htmls.length > 0) {
-                try {
-                    for (const h of htmls) {
-                        const resp = await fetch(agentUrl + '/print/html', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'text/html' },
-                            body: h,
-                        });
-                        if (!resp.ok) throw new Error('Agent print failed');
-                        await new Promise(r => setTimeout(r, 120));
-                    }
-                    showNotification('✅ Impreso en impresora local (cliente)');
-                    return;
-                } catch (err) {
-                    console.warn('Local agent printing failed, falling back to browser print:', err);
-                }
-            }
-
-            // Fallback: open browser print dialogs
+        // Respect user preference: if prefer browser print, skip agent and open browser print dialogs
+        if (isPreferBrowserPrint()) {
+            // Use browser print windows for the created order
             setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
-        })();
+        } else {
+            (async () => {
+                const agentUrl = 'http://127.0.0.1:34567';
+                let agentAvailable = false;
+                try {
+                    const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
+                    agentAvailable = ping && ping.ok;
+                } catch (_) { agentAvailable = false; }
+
+                const categorias = new Set(pedidoCreado.lineas.map(l => l.categoria_nombre));
+                const htmls = [];
+                const mainHtml = buildTicketHtml(pedidoCreado);
+                if (mainHtml) htmls.push(mainHtml);
+                if (categorias.has('Comidas')) {
+                    const htmlC = buildComandaHtml(pedidoCreado, 'Comidas', 'COMIDAS', 'C');
+                    if (htmlC) htmls.push(htmlC);
+                }
+                if (categorias.has('Bebidas')) {
+                    const htmlB = buildComandaHtml(pedidoCreado, 'Bebidas', 'BEBIDAS', 'B');
+                    if (htmlB) htmls.push(htmlB);
+                }
+
+                if (agentAvailable && htmls.length > 0) {
+                    try {
+                        for (const h of htmls) {
+                            const resp = await fetch(agentUrl + '/print/html', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
+                                body: h,
+                            });
+                            if (!resp.ok) throw new Error('Agent print failed');
+                            await new Promise(r => setTimeout(r, 120));
+                        }
+                        showNotification('✅ Impreso en impresora local (cliente)');
+                        return;
+                    } catch (err) {
+                        console.warn('Local agent printing failed, falling back to browser print:', err);
+                    }
+                }
+
+                // Fallback: open browser print dialogs
+                setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
+            })();
+        }
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
     }
@@ -818,7 +880,7 @@ async function imprimirEnPC(id) {
         // Try to detect local agent
         let agentAvailable = false;
         try {
-            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store' });
+            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
             agentAvailable = ping && ping.ok;
         } catch (_) { agentAvailable = false; }
 
@@ -843,7 +905,7 @@ async function imprimirEnPC(id) {
                 for (const h of htmls) {
                     const resp = await fetch(agentUrl + '/print/html', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'text/html' },
+                        headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
                         body: h,
                     });
                     if (!resp.ok) throw new Error('Agent print failed');
@@ -1218,6 +1280,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     renderForceSilentToggle();
+    renderAgentStatus();
+
+    // Render toggle to prefer browser print on confirm (default = ON)
+    function renderPreferBrowserToggle() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+        if (document.getElementById('prefer-browser-print-wrap')) return; // already added
+        const wrap = document.createElement('div');
+        wrap.id = 'prefer-browser-print-wrap';
+        wrap.style.padding = '12px';
+        wrap.style.borderTop = '1px solid #eee';
+        wrap.innerHTML = `
+            <label style="display:flex;align-items:center;gap:8px;">
+                <input id="prefer-browser-print-cb" type="checkbox" />
+                <span style="font-size:0.95rem">Imprimir por navegador al confirmar (si lo activas)</span>
+            </label>
+        `;
+        sidebar.appendChild(wrap);
+        const cb = document.getElementById('prefer-browser-print-cb');
+        cb.checked = isPreferBrowserPrint();
+        cb.addEventListener('change', (e) => {
+            setPreferBrowserPrint(e.target.checked);
+            showNotification(e.target.checked ? 'Impresión por navegador por defecto' : 'Impresión por agente/servidor preferida');
+        });
+    }
+    renderPreferBrowserToggle();
 
     // Attach UI toggles for desktop: order list and compact mode
     const toggleOrder = document.getElementById('toggle-order-list');

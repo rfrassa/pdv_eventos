@@ -47,17 +47,17 @@ class EscposBuffer:
         return bytes(self._buf)
 
 
-def _enviar_tcp(data):
+def _enviar_tcp_to(data, ip, puerto):
     import socket
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
-        sock.connect((IP_IMPRESORA, PUERTO_IMPRESORA))
+        sock.connect((ip, puerto))
         sock.send(data)
         sock.close()
         return True
     except (socket.timeout, ConnectionRefusedError, OSError) as e:
-        logger.error(f'Impresora {IP_IMPRESORA}:{PUERTO_IMPRESORA} no responde: {e}')
+        logger.error(f'Impresora {ip}:{puerto} no responde: {e}')
         raise RuntimeError(f'Impresora no disponible: {e}')
 
 
@@ -191,8 +191,11 @@ def _generate_ticket_html(pedido, categoria_nombre=None, etiqueta=None, sufijo=N
 
 
 class LocalPrinterService:
-    def __init__(self, printer_name=None):
+    def __init__(self, printer_name=None, ip=None, puerto=None):
         self.printer_name = printer_name
+        # allow overriding target printer IP/port per PDV
+        self.ip = ip or IP_IMPRESORA
+        self.puerto = puerto or PUERTO_IMPRESORA
 
     def _get_available_printers_windows(self):
         try:
@@ -294,6 +297,35 @@ class LocalPrinterService:
         except Exception as e:
             raise RuntimeError(f'Error imprimiendo por TCP: {e}')
 
+    def _send_raw_windows(self, data_bytes, printer_name=None):
+        """Send raw bytes to Windows spool using win32print.WritePrinter (RAW).
+        Returns the printer name used or raises on error.
+        """
+        try:
+            import win32print
+            # Choose printer
+            target = printer_name or self._get_default_printer_windows()
+            if not target:
+                printers = self._get_available_printers_windows()
+                if not printers:
+                    raise RuntimeError('No hay impresoras disponibles en Windows')
+                target = printers[0]
+
+            hPrinter = win32print.OpenPrinter(target)
+            try:
+                # StartDocPrinter requires (pDatatype) = 'RAW' to send raw bytes
+                # Using StartDocPrinter/WritePrinter directly
+                win32print.StartDocPrinter(hPrinter, 1, ("Ticket", None, "RAW"))
+                win32print.StartPagePrinter(hPrinter)
+                win32print.WritePrinter(hPrinter, data_bytes)
+                win32print.EndPagePrinter(hPrinter)
+                win32print.EndDocPrinter(hPrinter)
+            finally:
+                win32print.ClosePrinter(hPrinter)
+            return target
+        except Exception as e:
+            raise RuntimeError(f'Error enviando RAW a spool Windows: {e}')
+
     def _print_escpos(self, lineas):
         buf = EscposBuffer()
         buf._buf.extend(b'\x1b\x74\x10')
@@ -304,8 +336,31 @@ class LocalPrinterService:
         buf.text('\n\n')
         buf.cut()
         data = b'\x1b\x40' + buf.build()
-        _enviar_tcp(data)
-        return f'POS-80C ({IP_IMPRESORA}:{PUERTO_IMPRESORA})'
+        # Prefer ESC/POS TCP to configured IP/port when set
+        # If TCP fails or we're on Windows without reachable TCP, send RAW to Windows spool
+        # Try TCP first if ip/puerto configured
+        if self.ip:
+            try:
+                _enviar_tcp_to(data, self.ip, self.puerto)
+                return f'POS-80C ({self.ip}:{self.puerto})'
+            except Exception as e:
+                logger.warning(f'ESC/POS TCP to {self.ip}:{self.puerto} failed: {e}')
+
+        # On Windows, try RAW spool (USB) to preserve ESC/POS control codes
+        if platform.system() == 'Windows':
+            try:
+                target = self._send_raw_windows(data, printer_name=self.printer_name)
+                return target
+            except Exception as e:
+                logger.warning(f'RAW spool failed: {e}')
+
+        # Fallback: attempt to send via powershell TCP routine (legacy)
+        try:
+            text_lines = [l.rstrip('\n') for l in lineas]
+            return self._print_text_via_powershell(text_lines, self.printer_name)
+        except Exception as e:
+            logger.error(f'All print methods failed: {e}')
+            raise
 
     def _print_windows_via_powershell(self, html, printer_name):
         try:
