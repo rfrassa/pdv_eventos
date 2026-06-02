@@ -161,7 +161,7 @@ def pedido_reimprimir(request, pedido_id):
     try:
         from .utils.ticket_handler import imprimir_ticket
         imprimir_ticket(pedido)
-        Pedido.objects.filter(id=pedido_id).update(veces_impreso=models.F('veces_impreso') + 1)
+        Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
         return Response({'mensaje': 'Ticket reimpreso correctamente', 'veces_impreso': pedido.veces_impreso + 1})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
