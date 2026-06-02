@@ -69,6 +69,7 @@ async function apiFetch(url, options = {}) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || err.detail || 'Error de conexión');
     }
+    if (res.status === 204 || res.headers.get('content-length') === '0') return null;
     return res.json();
 }
 
@@ -709,13 +710,7 @@ async function actualizarBadgePendientes() {
     } catch (_) {}
 }
 
-async function toggleOrders() {
-    const overlay = document.getElementById('orders-overlay');
-    if (overlay.classList.contains('open')) {
-        overlay.classList.remove('open');
-        return;
-    }
-    overlay.classList.add('open');
+async function cargarPendientes() {
     try {
         const pedidos = await apiFetch('/api/pedidos/abiertos/?punto_venta_id=' + state.pdvActual.id);
         const list = document.getElementById('orders-list');
@@ -745,12 +740,23 @@ async function toggleOrders() {
     }
 }
 
+async function toggleOrders() {
+    const overlay = document.getElementById('orders-overlay');
+    if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        return;
+    }
+    overlay.classList.add('open');
+    await cargarPendientes();
+}
+
 async function eliminarPedido(id) {
     if (!confirm('¿Eliminar pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        toggleOrders();
+        actualizarBadgePendientes();
+        await cargarPendientes();
     } catch (e) {
         showNotification('Error al eliminar: ' + e.message, 'error');
     }
@@ -779,13 +785,7 @@ async function retomarPedido(id) {
 }
 
 // --- HISTORIAL ---
-async function toggleHistorial() {
-    const overlay = document.getElementById('historial-overlay');
-    if (overlay.classList.contains('open')) {
-        overlay.classList.remove('open');
-        return;
-    }
-    overlay.classList.add('open');
+async function cargarHistorial() {
     try {
         const data = await apiFetch('/api/pedidos/historial/?punto_venta_id=' + state.pdvActual.id + '&limite=100');
         const list = document.getElementById('historial-list');
@@ -817,12 +817,22 @@ async function toggleHistorial() {
     }
 }
 
+async function toggleHistorial() {
+    const overlay = document.getElementById('historial-overlay');
+    if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        return;
+    }
+    overlay.classList.add('open');
+    await cargarHistorial();
+}
+
 async function eliminarPedidoHistorial(id) {
     if (!confirm('¿Eliminar permanentemente el pedido #' + id + '?')) return;
     try {
         await apiFetch('/api/pedidos/' + id + '/', { method: 'DELETE' });
         showNotification('Pedido #' + id + ' eliminado');
-        toggleHistorial();
+        await cargarHistorial();
     } catch (e) {
         showNotification('Error al eliminar: ' + e.message, 'error');
     }
