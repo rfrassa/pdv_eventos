@@ -200,35 +200,6 @@ def test_print(request):
         return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@csrf_exempt
-@api_view(['GET', 'POST'])
-def test_print(request):
-    ip = request.data.get('ip') if request.method == 'POST' else request.query_params.get('ip', '192.168.0.58')
-    puerto = int(request.data.get('puerto', 9100) if request.method == 'POST' else request.query_params.get('puerto', 9100))
-    try:
-        from pdv.utils.local_printer import EscposBuffer
-        import socket
-        buf = EscposBuffer()
-        buf.set(align='center')
-        buf.text('=== TEST DE IMPRESION ===\n')
-        buf.text(f'IP: {ip}:{puerto}\n')
-        buf.text('IBAT San José\n')
-        buf.text('Peña IBAT 2026\n\n')
-        buf.set(align='left')
-        buf.text('Si ves esto la impresora\n')
-        buf.text('funciona correctamente!\n\n')
-        buf.cut()
-        data = buf.build()
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(3)
-        sock.connect((ip, puerto))
-        sock.send(data)
-        sock.close()
-        return Response({'mensaje': f'Ticket de prueba enviado a {ip}:{puerto}', 'ok': True})
-    except Exception as e:
-        return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 def resumen_ventas(evento, punto_venta_id=None):
     """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
     compartida por cierre_caja y resumen_ventas_view."""
