@@ -31,8 +31,6 @@ let state = {
     detallePedidoId: null,
     printerName: localStorage.getItem('pdv_printer') || '',
     impresoras: [],
-    print_after_confirm: true,
-    print_split_by_category: true,
 };
 
 function isTypingTarget(el) {
@@ -83,6 +81,62 @@ function showNotification(msg, type = 'success') {
 
 function formatPrice(n) {
     return '$' + parseFloat(n).toFixed(2);
+}
+
+// Preferencia: usar impresión por navegador al confirmar (default = false).
+// El flujo por defecto será intentar el agente local primero y fallback al navegador.
+function isPreferBrowserPrint() {
+    // Default to false (agent-first) when not set
+    return localStorage.getItem('prefer_browser_print') === '1';
+}
+function setPreferBrowserPrint(v) {
+    localStorage.setItem('prefer_browser_print', v ? '1' : '0');
+}
+
+// Agent URL usado por el frontend para impresión silenciosa
+const AGENT_URL = 'http://127.0.0.1:34567';
+// Token para autorizar peticiones al agente local (escrito en print_agent/agent.token)
+const AGENT_TOKEN = '681c2ea1f0a74d4481ff647cbe42d28d';
+
+// Render agent status indicator in sidebar and keep it updated
+function renderAgentStatus() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    if (document.getElementById('agent-status-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'agent-status-wrap';
+    wrap.style.padding = '12px';
+    wrap.style.borderTop = '1px solid #eee';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    wrap.innerHTML = `
+        <div id="agent-status-dot" style="width:12px;height:12px;border-radius:50%;background:#ccc"></div>
+        <div style="flex:1">
+            <div style="font-size:0.95rem">Agente local</div>
+            <div id="agent-status-text" style="font-size:0.8rem;color:var(--text-light)">sin verificar</div>
+        </div>
+    `;
+    sidebar.appendChild(wrap);
+
+    async function pingAgent() {
+        try {
+            const res = await fetch(AGENT_URL + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
+            if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                document.getElementById('agent-status-dot').style.background = '#2ecc71';
+                document.getElementById('agent-status-text').textContent = data.printer || 'agente activo';
+                return true;
+            }
+        } catch (e) {}
+        document.getElementById('agent-status-dot').style.background = '#e74c3c';
+        document.getElementById('agent-status-text').textContent = 'no responde';
+        return false;
+    }
+
+    // Ping immediately and periodically
+    pingAgent();
+    setInterval(pingAgent, 8000);
 }
 
 // --- INIT ---
@@ -247,10 +301,10 @@ function renderTicket() {
     const count = document.getElementById('ticket-count');
     const total = document.getElementById('ticket-total');
     const topTotal = document.getElementById('top-total');
-
     const numItems = state.ticket.reduce((s, l) => s + l.cantidad, 0);
     let editTag = state.pedidoEditando ? ' <span class="detalle-edit-badge">Editando #' + state.pedidoEditando + '</span>' : '';
-    count.innerHTML = numItems + ' producto' + (numItems !== 1 ? 's' : '') + editTag;
+    const countText = numItems + ' producto' + (numItems !== 1 ? 's' : '') + editTag;
+    if (count) count.innerHTML = countText;
 
     let subtotal = 0;
     let html = '';
@@ -280,8 +334,21 @@ function renderTicket() {
     body.innerHTML = html;
 
     const totalStr = formatPrice(subtotal);
-    total.textContent = totalStr;
+    if (total) total.textContent = totalStr;
     if (topTotal) topTotal.textContent = totalStr;
+
+    // Update mobile ticket body
+    if (body) body.innerHTML = html;
+
+    // Update side (desktop) ticket elements if present
+    const countSide = document.getElementById('ticket-count-side');
+    const totalSide = document.getElementById('ticket-total-side');
+    const bodySide = document.getElementById('ticket-body-side');
+    const btnGuardarSide = document.getElementById('btn-guardar-label-side');
+    if (countSide) countSide.innerHTML = countText;
+    if (totalSide) totalSide.textContent = totalStr;
+    if (bodySide) bodySide.innerHTML = html;
+    if (btnGuardarSide) btnGuardarSide.textContent = document.getElementById('btn-guardar-label')?.textContent || 'GUARDAR';
 
     document.documentElement.style.setProperty('--ticket-height',
         (state.ticket.length > 0 ? '180px' : '0px'));
@@ -580,16 +647,50 @@ async function confirmarPago() {
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        // Si el usuario marcó imprimir después de confirmar, usar impresión por navegador
-        if (state.print_after_confirm) {
-            setTimeout(() => {
-                imprimirTicketNavegador(pedidoCreado.id);
-                state.print_after_confirm = false;
-                const btn = document.getElementById('btn-print-after');
-                if (btn) btn.classList.remove('active');
-            }, 500);
+        if (isPreferBrowserPrint()) {
+            setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
         } else {
-            setTimeout(() => imprimirEnPC(pedidoCreado.id), 500);
+            (async () => {
+                const agentUrl = 'http://127.0.0.1:34567';
+                let agentAvailable = false;
+                try {
+                    const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
+                    agentAvailable = ping && ping.ok;
+                } catch (_) { agentAvailable = false; }
+
+                const categorias = new Set(pedidoCreado.lineas.map(l => l.categoria_nombre));
+                const htmls = [];
+                const mainHtml = buildTicketHtml(pedidoCreado);
+                if (mainHtml) htmls.push(mainHtml);
+                if (categorias.has('Comidas')) {
+                    const htmlC = buildComandaHtml(pedidoCreado, 'Comidas', 'COMIDAS', 'C');
+                    if (htmlC) htmls.push(htmlC);
+                }
+                if (categorias.has('Bebidas')) {
+                    const htmlB = buildComandaHtml(pedidoCreado, 'Bebidas', 'BEBIDAS', 'B');
+                    if (htmlB) htmls.push(htmlB);
+                }
+
+                if (agentAvailable && htmls.length > 0) {
+                    try {
+                        for (const h of htmls) {
+                            const resp = await fetch(agentUrl + '/print/html', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
+                                body: h,
+                            });
+                            if (!resp.ok) throw new Error('Agent print failed');
+                            await new Promise(r => setTimeout(r, 120));
+                        }
+                        showNotification('✅ Impreso en impresora local (cliente)');
+                        return;
+                    } catch (err) {
+                        console.warn('Local agent printing failed, falling back to browser print:', err);
+                    }
+                }
+
+                setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
+            })();
         }
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
@@ -810,7 +911,7 @@ async function toggleDetalle(id) {
             <div style="display:flex;gap:8px;margin-top:16px">
                 <button class="btn-resume-order" style="flex:1;text-align:center" onclick="imprimirEnPC(${p.id})">Imprimir</button>
                 <button class="btn-resume-order" style="flex:1;text-align:center" onclick="window.open(API_BASE + '/api/pedidos/' + ${p.id} + '/imprimir-pdf/', '_blank')">PDF</button>
-                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirTicketNavegador(${p.id})">Imprimir Navegador</button>
+                <button class="btn-resume-order" style="flex:1;text-align:center" onclick="cerrarDetalle();imprimirTicketNavegador(${p.id})">Navegador</button>
             </div>
         `;
     } catch (e) {
@@ -823,9 +924,53 @@ function cerrarDetalle() {
     state.detallePedidoId = null;
 }
 
-// --- IMPRIMIR POR SERVIDOR (PC) ---
+// --- IMPRIMIR: intento agente local (cliente) -> fallback servidor ---
 async function imprimirEnPC(id) {
+    const agentUrl = 'http://127.0.0.1:34567';
     try {
+        // Try to detect local agent
+        let agentAvailable = false;
+        try {
+            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
+            agentAvailable = ping && ping.ok;
+        } catch (_) { agentAvailable = false; }
+
+        // Fetch pedido once (source of truth: backend)
+        const pedido = await apiFetch('/api/pedidos/' + id + '/');
+        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
+
+        const htmls = [];
+        const mainHtml = buildTicketHtml(pedido);
+        if (mainHtml) htmls.push(mainHtml);
+        if (categorias.has('Comidas')) {
+            const htmlC = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+            if (htmlC) htmls.push(htmlC);
+        }
+        if (categorias.has('Bebidas')) {
+            const htmlB = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+            if (htmlB) htmls.push(htmlB);
+        }
+
+        if (agentAvailable && htmls.length > 0) {
+            try {
+                for (const h of htmls) {
+                    const resp = await fetch(agentUrl + '/print/html', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
+                        body: h,
+                    });
+                    if (!resp.ok) throw new Error('Agent print failed');
+                    // small delay between prints
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                showNotification('✅ Impreso en impresora local (cliente)');
+                return;
+            } catch (err) {
+                console.warn('Local agent printing failed, falling back to server:', err);
+            }
+        }
+
+        // Fallback: send to backend server to handle printing
         const res = await apiFetch('/api/pedidos/' + id + '/imprimir-local/', {
             method: 'POST',
             body: JSON.stringify({ printer_name: state.printerName || undefined }),
@@ -1023,17 +1168,13 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
     const target = (categoriaNombre || '').toString().toLowerCase().trim();
     pedido.lineas.forEach(l => {
         const ln = (l.categoria_nombre || '').toString().toLowerCase().trim();
-
-        // Matching tolerant: exact, substring or viceversa
         let matched = false;
         if (target && ln) {
             if (ln === target) matched = true;
             else if (ln.includes(target)) matched = true;
             else if (target.includes(ln)) matched = true;
         }
-
         if (!matched) return;
-
         const nota = l.nota ? '<br><small>(' + l.nota + ')</small>' : '';
         lineasHtml += '<div style="padding:4px 0;font-size:14px">' + l.cantidad + 'x ' + l.producto_nombre + nota + '</div>';
     });
@@ -1095,29 +1236,17 @@ async function imprimirTicketNavegador(id) {
         const pedido = await apiFetch('/api/pedidos/' + id + '/');
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
 
-        // Construir un único documento que contenga el ticket completo y (si aplica)
-        // las comandas por categoría, separadas por saltos de página, para evitar
-        // abrir múltiples ventanas y diálogos de impresión.
         const htmlParts = [];
         const htmlCompleto = buildTicketHtml(pedido);
         if (htmlCompleto) htmlParts.push(htmlCompleto);
 
-        if (state.print_split_by_category) {
-            Array.from(categorias).forEach(cat => {
-                const sufijo = (cat && typeof cat === 'string' && cat.length > 0) ? cat.trim()[0].toUpperCase() : '';
-                const etiqueta = cat ? cat.toUpperCase() : '';
-                const htmlCat = buildComandaHtml(pedido, cat, etiqueta, sufijo);
-                if (htmlCat) htmlParts.push(htmlCat);
-            });
-        } else {
-            if (categorias.has('Comidas')) {
-                const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
-                if (htmlComidas) htmlParts.push(htmlComidas);
-            }
-            if (categorias.has('Bebidas')) {
-                const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-                if (htmlBebidas) htmlParts.push(htmlBebidas);
-            }
+        if (categorias.has('Comidas')) {
+            const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
+            if (htmlComidas) htmlParts.push(htmlComidas);
+        }
+        if (categorias.has('Bebidas')) {
+            const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
+            if (htmlBebidas) htmlParts.push(htmlBebidas);
         }
 
         if (htmlParts.length === 0) return;
@@ -1140,78 +1269,85 @@ async function imprimirTicketNavegador(id) {
     }
 }
 
-// --- IMPRIMIR TICKET DESDE EL ESTADO (ticket en memoria) ---
-function imprimirTicketDesdeEstado() {
-    if (!state.ticket || state.ticket.length === 0) {
-        showNotification('El ticket está vacío', 'error');
+// --- TABLERO EN VIVO ---
+let _dashboardInterval = null;
+
+function toggleDashboard() {
+    const overlay = document.getElementById('dashboard-overlay');
+    if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        clearInterval(_dashboardInterval);
+        _dashboardInterval = null;
         return;
     }
+    const sel = document.getElementById('dashboard-pdv-select');
+    sel.innerHTML = '<option value="">Todas las cajas</option>';
+    state.pdvs.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.nombre;
+        sel.appendChild(opt);
+    });
+    overlay.classList.add('open');
+    cargarDashboard();
+    _dashboardInterval = setInterval(cargarDashboard, 7000);
+}
 
-    // Construir un objeto pedido temporal similar al API
-    const pedido = {
-        id: 'TEMP',
-        punto_venta_nombre: state.pdvActual ? state.pdvActual.nombre : '',
-        creado: new Date().toISOString(),
-        lineas: state.ticket.map(l => {
-            const prod = state.productos.find(p => p.id === l.producto) || {};
-            return {
-                cantidad: l.cantidad,
-                producto_nombre: l.producto_nombre,
-                precio_unitario: l.precio_unitario,
-                nota: l.nota || '',
-                categoria_nombre: prod.categoria_nombre || ''
-            };
-        }),
-        total_final: state.ticket.reduce((s, l) => s + l.cantidad * l.precio_unitario, 0),
-        pagos: []
-    };
+function cambiarFiltroDashboard() {
+    cargarDashboard();
+}
 
+async function cargarDashboard() {
+    const statusEl = document.getElementById('dashboard-status');
+    if (statusEl) statusEl.textContent = 'actualizando…';
+    const pdvId = document.getElementById('dashboard-pdv-select').value;
+    const url = '/api/resumen-ventas/' + (pdvId ? '?punto_venta_id=' + pdvId : '');
     try {
-        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
-
-        const htmlParts = [];
-        const htmlCompleto = buildTicketHtml(pedido);
-        if (htmlCompleto) htmlParts.push(htmlCompleto);
-
-        if (categorias.has('Comidas')) {
-            const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
-            if (htmlComidas) htmlParts.push(htmlComidas);
-        }
-
-        if (categorias.has('Bebidas')) {
-            const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-            if (htmlBebidas) htmlParts.push(htmlBebidas);
-        }
-
-        if (htmlParts.length === 0) return;
-
-        const combinedBodies = htmlParts.map(part => {
-            const bodyMatch = part.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-            return bodyMatch ? bodyMatch[1] : part;
-        }).join('<div style="page-break-after: always;"></div>');
-        const headMatch = htmlParts[0].match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-        const headHtml = headMatch ? headMatch[1] : '';
-        const combinedHtml = `<html><head>${headHtml}</head><body>${combinedBodies}</body></html>`;
-        openPrintWindow(combinedHtml);
+        const data = await apiFetch(url);
+        renderDashboard(data);
+        if (statusEl) statusEl.textContent = '● en vivo';
     } catch (e) {
-        showNotification('Error al preparar impresión: ' + e.message, 'error');
+        document.getElementById('dashboard-body').innerHTML =
+            '<div class="empty-state">Error: ' + e.message + '</div>';
+        if (statusEl) statusEl.textContent = 'sin conexión';
     }
 }
 
-function togglePrintAfterConfirm() {
-    state.print_after_confirm = !state.print_after_confirm;
-    const btn = document.getElementById('btn-print-after');
-    if (btn) {
-        if (state.print_after_confirm) {
-            btn.classList.add('active');
-            btn.textContent = 'Imprimir al confirmar (ON)';
-            showNotification('Se imprimirá automáticamente al confirmar el pago');
-        } else {
-            btn.classList.remove('active');
-            btn.textContent = 'Imprimir Web';
-            showNotification('Impresión automática al confirmar desactivada', 'warning');
-        }
-    }
+function renderDashboard(data) {
+    const totalFmt = '$' + parseFloat(data.total_general).toFixed(2);
+    const ventas = data.total_pedidos;
+
+    let metodosHtml = (data.total_por_metodo || []).map(m =>
+        `<div class="dashboard-row">
+            <span>${m.metodo_display}</span>
+            <span class="dashboard-value">$${parseFloat(m.total).toFixed(2)}</span>
+        </div>`
+    ).join('');
+    if (!metodosHtml) metodosHtml = '<div class="dashboard-empty">Sin ventas registradas</div>';
+
+    let productosHtml = (data.por_producto || []).map(p =>
+        `<div class="dashboard-row">
+            <span>${p.nombre}</span>
+            <span class="dashboard-units">${p.unidades} u.</span>
+        </div>`
+    ).join('');
+    if (!productosHtml) productosHtml = '<div class="dashboard-empty">Sin ventas registradas</div>';
+
+    document.getElementById('dashboard-body').innerHTML = `
+        <div class="dashboard-total-card">
+            <div class="dashboard-total-label">TOTAL VENDIDO</div>
+            <div class="dashboard-total-amount">${totalFmt}</div>
+            <div class="dashboard-total-sub">${ventas} venta${ventas !== 1 ? 's' : ''} cobrada${ventas !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="dashboard-section">
+            <div class="dashboard-section-title">Por m&eacute;todo de pago</div>
+            ${metodosHtml}
+        </div>
+        <div class="dashboard-section">
+            <div class="dashboard-section-title">Productos m&aacute;s vendidos</div>
+            ${productosHtml}
+        </div>
+    `;
 }
 
 // --- PDV SELECTOR (simple) ---
@@ -1240,28 +1376,12 @@ document.addEventListener('keydown', function(e) {
     const key = e.key.toLowerCase();
 
     if (!paymentOpen && !isTypingTarget(e.target) && e.altKey) {
-        if (key === 'n') {
-            e.preventDefault();
-            nuevoTicket();
-        } else if (key === 'g') {
-            e.preventDefault();
-            guardarPedido();
-        } else if (key === 'c') {
-            e.preventDefault();
-            abrirPago();
-        } else if (key === 'o') {
-            e.preventDefault();
-            toggleOrders();
-        } else if (key === 'h') {
-            e.preventDefault();
-            toggleHistorial();
-        } else if (key === 'i') {
-            e.preventDefault();
-            selectPrinter();
-        } else if (key === 'p') {
-            e.preventDefault();
-            printActiveContext();
-        }
+        if (key === 'n') { e.preventDefault(); nuevoTicket(); }
+        else if (key === 'g') { e.preventDefault(); guardarPedido(); }
+        else if (key === 'c') { e.preventDefault(); abrirPago(); }
+        else if (key === 'o') { e.preventDefault(); toggleOrders(); }
+        else if (key === 'h') { e.preventDefault(); toggleHistorial(); }
+        else if (key === 'i') { e.preventDefault(); selectPrinter(); }
         return;
     }
 
@@ -1272,25 +1392,9 @@ document.addEventListener('keydown', function(e) {
     const agregarBtn = document.querySelector('.btn-add-payment');
     const confirmarBtn = document.getElementById('btn-confirm-payment');
 
-    if (e.key === 'Escape') {
-        e.preventDefault();
-        cerrarPago();
-        return;
-    }
-
-    const shortcut = PAYMENT_SHORTCUTS.find(s => s.key.toLowerCase() === key || s.alt.toLowerCase() === key);
-    if (shortcut) {
-        e.preventDefault();
-        seleccionarMetodo(shortcut.methodId);
-        return;
-    }
+    if (e.key === 'Escape') { e.preventDefault(); cerrarPago(); return; }
 
     if (e.key === 'Enter') {
-        if (state.metodoSeleccionado && input.value) {
-            e.preventDefault();
-            agregarPago();
-            return;
-        }
         const el = document.activeElement;
         if (el === input || el === recibido || el === agregarBtn) {
             e.preventDefault();
@@ -1302,11 +1406,7 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    if ((e.ctrlKey || e.metaKey) && key === 'backspace') {
-        e.preventDefault();
-        limpiarPagos();
-        return;
-    }
+    if ((e.ctrlKey || e.metaKey) && key === 'backspace') { e.preventDefault(); limpiarPagos(); return; }
 
     if (e.key !== 'Tab') return;
 
@@ -1333,4 +1433,57 @@ document.addEventListener('keydown', function(e) {
     next.focus();
 });
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() {
+    init();
+
+    function isForceSilent() { return localStorage.getItem('force_silent_print') === '1'; }
+    function setForceSilent(v) {
+        localStorage.setItem('force_silent_print', v ? '1' : '0');
+        const cb = document.getElementById('force-silent-print-cb');
+        if (cb) cb.checked = !!v;
+    }
+    function renderForceSilentToggle() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar || document.getElementById('force-silent-print-wrap')) return;
+        const wrap = document.createElement('div');
+        wrap.id = 'force-silent-print-wrap';
+        wrap.style.cssText = 'padding:12px;border-top:1px solid #eee';
+        wrap.innerHTML = `<label style="display:flex;align-items:center;gap:8px"><input id="force-silent-print-cb" type="checkbox"><span style="font-size:0.95rem">Forzar impresión silenciosa (si hay agente)</span></label>`;
+        sidebar.appendChild(wrap);
+        const cb = document.getElementById('force-silent-print-cb');
+        cb.checked = isForceSilent();
+        cb.addEventListener('change', e => {
+            setForceSilent(e.target.checked);
+            showNotification(e.target.checked ? 'Forzar impresión silenciosa activada' : 'Desactivada');
+        });
+    }
+    renderForceSilentToggle();
+    renderAgentStatus();
+
+    function renderPreferBrowserToggle() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar || document.getElementById('prefer-browser-print-wrap')) return;
+        const wrap = document.createElement('div');
+        wrap.id = 'prefer-browser-print-wrap';
+        wrap.style.cssText = 'padding:12px;border-top:1px solid #eee';
+        wrap.innerHTML = `<label style="display:flex;align-items:center;gap:8px"><input id="prefer-browser-print-cb" type="checkbox"><span style="font-size:0.95rem">Imprimir por navegador al confirmar</span></label>`;
+        sidebar.appendChild(wrap);
+        const cb = document.getElementById('prefer-browser-print-cb');
+        cb.checked = isPreferBrowserPrint();
+        cb.addEventListener('change', e => {
+            setPreferBrowserPrint(e.target.checked);
+            showNotification(e.target.checked ? 'Impresión por navegador activada' : 'Impresión por agente preferida');
+        });
+    }
+    renderPreferBrowserToggle();
+
+    document.getElementById('toggle-order-list')?.addEventListener('click', () => document.getElementById('order-list')?.classList.toggle('collapsed'));
+    document.getElementById('toggle-order-list-close')?.addEventListener('click', () => document.getElementById('order-list')?.classList.add('collapsed'));
+    document.getElementById('toggle-compact')?.addEventListener('click', () => document.documentElement.classList.toggle('compact'));
+
+    if (window.innerWidth >= 900) {
+        document.getElementById('order-list')?.classList.remove('collapsed');
+        const tb = document.getElementById('ticket-bar');
+        if (tb) tb.style.display = 'none';
+    }
+});

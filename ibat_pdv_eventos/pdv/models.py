@@ -103,7 +103,7 @@ class Pago(models.Model):
     pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='pagos')
     metodo = models.CharField(max_length=2, choices=METODOS)
     monto = models.DecimalField(max_digits=10, decimal_places=2)
-    monto_recibido = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, verbose_name='Monto recibido')
+    monto_recibido = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, verbose_name='Monto recibido (efectivo)')
 
     class Meta:
         verbose_name = 'Pago'

@@ -40,10 +40,80 @@ button {
     height: 100%;
     display: flex;
     flex-direction: column;
+    width: 100%;
     max-width: 480px;
     margin: 0 auto;
     position: relative;
 }
+
+/* Two-column shell for larger screens */
+.app-shell {
+    display: block;
+}
+
+@media (min-width: 900px) {
+    #app {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0 12px;
+    }
+    .app-shell {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 12px;
+        height: calc(100vh - 72px);
+        padding: 12px;
+    }
+    .left-col {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+    .products-area { padding-bottom: 24px; }
+    .order-list {
+        background: var(--card);
+        border-left: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .order-list.collapsed { transform: translateX(100%); width: 0; visibility: hidden; }
+    .order-list-header {
+        display:flex; align-items:center; gap:8px; padding:12px; border-bottom:1px solid var(--border);
+    }
+    .order-list-body { overflow-y:auto; padding:12px; }
+    .order-list-actions { padding:12px; display:flex; gap:8px; }
+}
+
+/* On desktop show side list and hide mobile ticket bar */
+@media (min-width: 900px) {
+    .ticket-bar { display: none; }
+    .order-list.collapsed { transform: none; width: auto; visibility: visible; }
+}
+
+@media (min-width: 900px) {
+    /* place ticket-bar statically inside left column */
+    .ticket-bar {
+        display: block;
+        position: static;
+        margin-top: 12px;
+        width: auto;
+        max-width: none;
+        transform: none;
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        background: var(--card);
+    }
+    .products-area { flex: 1 1 auto; }
+}
+
+/* Compact mode: smaller paddings for dense lists */
+.compact .product-card, .compact .order-card, .compact .ticket-line { padding: 8px; }
+.compact .product-name { font-size: 0.85rem; }
+.compact .ticket-line-name { font-size: 0.8rem; }
 
 /* HEADER */
 .header {
@@ -891,4 +961,103 @@ button {
 @media (min-width: 480px) {
     body { background: #e0e0e0; }
     #app, .payment-overlay, .orders-overlay { box-shadow: 0 0 30px rgba(0,0,0,0.15); }
+}
+
+/* --- TABLERO EN VIVO --- */
+.dashboard-pdv-bar {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+    flex-shrink: 0;
+}
+
+.dashboard-pdv-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.dashboard-status-chip {
+    font-size: 0.72rem;
+    color: var(--success);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.dashboard-total-card {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 12px;
+    padding: 20px 16px;
+    margin: 12px;
+    text-align: center;
+}
+
+.dashboard-total-label {
+    font-size: 0.72rem;
+    opacity: 0.65;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.dashboard-total-amount {
+    font-size: 2.4rem;
+    font-weight: 700;
+    margin: 4px 0 2px;
+    line-height: 1.1;
+}
+
+.dashboard-total-sub {
+    font-size: 0.82rem;
+    opacity: 0.65;
+}
+
+.dashboard-section {
+    margin: 0 12px 18px;
+}
+
+.dashboard-section-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-light);
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dashboard-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+}
+
+.dashboard-row:last-child {
+    border-bottom: none;
+}
+
+.dashboard-value {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.dashboard-units {
+    font-weight: 600;
+    color: var(--text-light);
+}
+
+.dashboard-empty {
+    padding: 10px 0;
+    font-size: 0.88rem;
+    color: var(--text-light);
+    text-align: center;
 }

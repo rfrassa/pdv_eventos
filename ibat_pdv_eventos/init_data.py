@@ -65,9 +65,9 @@ for nombre, precio, impuesto, cat_nombre in productos_data:
         print(f'Producto creado: {nombre}')
 
 pdvs_data = [
-    ('PDV 1 - Entrada', '192.168.1.101'),
-    ('PDV 2 - Principal', '192.168.1.102'),
-    ('PDV 3 - VIP', '192.168.1.103'),
+    ('PDV 1 - Entrada', '192.168.0.58'),
+    ('PDV 2 - Principal', '192.168.0.58'),
+    ('PDV 3 - VIP', '192.168.0.58'),
 ]
 
 for nombre, ip in pdvs_data:
