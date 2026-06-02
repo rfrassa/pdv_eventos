@@ -9,6 +9,9 @@ class TicketFormatter:
         return texto.center(self.ancho)
 
     def _left_right(self, izquierda, derecha):
+        max_izq = self.ancho - len(derecha) - 1
+        if len(izquierda) > max_izq:
+            izquierda = izquierda[:max_izq]
         espacios = self.ancho - len(izquierda) - len(derecha)
         return izquierda + ' ' * espacios + derecha
 
@@ -96,7 +99,7 @@ class TicketFormatter:
                     lineas.append(l)
 
         if not any('x ' in l for l in lineas[self._find_lines_start(lineas):]):
-            return lineas
+            return []
 
         lineas.append(self._linea_sep('-'))
         total_cat = subtotal_cat + impuestos_cat
