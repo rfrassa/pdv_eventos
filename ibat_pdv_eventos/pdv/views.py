@@ -1,6 +1,7 @@
 import os
+import threading
 from django.conf import settings
-from django.db.models import F
+from django.db.models import F, Sum
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
@@ -8,7 +9,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Evento, Pedido, Producto, PuntoVenta
+from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -62,6 +63,20 @@ def producto_detail(request, producto_id):
     producto.disponible = False
     producto.save()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _imprimir_en_background(pedido_id):
+    import django
+    django.setup()
+    from .models import Pedido
+    try:
+        pedido = Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos').get(id=pedido_id)
+        from .utils.ticket_handler import imprimir_ticket
+        imprimir_ticket(pedido)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error imprimiendo pedido #{pedido_id}: {e}")
 
 
 @csrf_exempt
@@ -186,51 +201,128 @@ def test_print(request):
 
 
 @csrf_exempt
+@api_view(['GET', 'POST'])
+def test_print(request):
+    ip = request.data.get('ip') if request.method == 'POST' else request.query_params.get('ip', '192.168.0.58')
+    puerto = int(request.data.get('puerto', 9100) if request.method == 'POST' else request.query_params.get('puerto', 9100))
+    try:
+        from pdv.utils.local_printer import EscposBuffer
+        import socket
+        buf = EscposBuffer()
+        buf.set(align='center')
+        buf.text('=== TEST DE IMPRESION ===\n')
+        buf.text(f'IP: {ip}:{puerto}\n')
+        buf.text('IBAT San José\n')
+        buf.text('Peña IBAT 2026\n\n')
+        buf.set(align='left')
+        buf.text('Si ves esto la impresora\n')
+        buf.text('funciona correctamente!\n\n')
+        buf.cut()
+        data = buf.build()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        sock.connect((ip, puerto))
+        sock.send(data)
+        sock.close()
+        return Response({'mensaje': f'Ticket de prueba enviado a {ip}:{puerto}', 'ok': True})
+    except Exception as e:
+        return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def resumen_ventas(evento, punto_venta_id=None):
+    """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
+    compartida por cierre_caja y resumen_ventas_view."""
+    filtro_pedido = {'punto_venta__evento': evento, 'cerrado': True}
+    filtro_pago   = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
+    filtro_linea  = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
+
+    if punto_venta_id:
+        filtro_pedido['punto_venta_id'] = punto_venta_id
+        filtro_pago['pedido__punto_venta_id'] = punto_venta_id
+        filtro_linea['pedido__punto_venta_id'] = punto_venta_id
+
+    totales = Pedido.objects.filter(**filtro_pedido).aggregate(
+        total=Sum('total_final'),
+        impuestos=Sum('total_impuestos'),
+    )
+    total_general  = round(float(totales['total']   or 0), 2)
+    total_impuestos = round(float(totales['impuestos'] or 0), 2)
+    total_pedidos  = Pedido.objects.filter(**filtro_pedido).count()
+
+    metodos_display = dict(Pago.METODOS)
+    por_metodo = [
+        {
+            'metodo': row['metodo'],
+            'metodo_display': metodos_display.get(row['metodo'], row['metodo']),
+            'total': round(float(row['total']), 2),
+        }
+        for row in (
+            Pago.objects.filter(**filtro_pago)
+            .values('metodo')
+            .annotate(total=Sum('monto'))
+            .order_by('-total')
+        )
+    ]
+
+    por_producto = [
+        {
+            'nombre': row['producto__nombre'],
+            'unidades': row['unidades'],
+        }
+        for row in (
+            LineaPedido.objects.filter(**filtro_linea)
+            .values('producto__nombre')
+            .annotate(unidades=Sum('cantidad'))
+            .order_by('-unidades')
+        )
+    ]
+
+    return {
+        'evento': evento.nombre,
+        'total_general': total_general,
+        'total_impuestos': total_impuestos,
+        'total_pedidos': total_pedidos,
+        'total_por_metodo': por_metodo,
+        'por_producto': por_producto,
+    }
+
+
+@csrf_exempt
 @api_view(['POST'])
 def cierre_caja(request):
     evento = get_object_or_404(Evento, activo=True)
     punto_venta_id = request.data.get('punto_venta_id')
 
-    pedidos_qs = Pedido.objects.filter(
-        punto_venta__evento=evento,
-        cerrado=False,
-    ).prefetch_related('pagos')
+    resumen = resumen_ventas(evento, punto_venta_id)
+
+    # Lista detallada de pedidos: exclusiva del cierre, no del tablero
+    filtro = {'punto_venta__evento': evento, 'cerrado': True}
     if punto_venta_id:
-        pedidos_qs = pedidos_qs.filter(punto_venta_id=punto_venta_id)
-
-    resumen = {
-        'evento': evento.nombre,
-        'total_ventas': 0,
-        'total_pedidos': pedidos_qs.count(),
-        'total_por_metodo': {},
-        'total_impuestos': 0,
-        'pedidos': [],
-    }
-
-    for pedido in pedidos_qs:
-        resumen['total_ventas'] += float(pedido.total_final)
-        resumen['total_impuestos'] += float(pedido.total_impuestos)
-        resumen['pedidos'].append({
-            'id': pedido.id,
-            'punto_venta': pedido.punto_venta.nombre,
-            'total': float(pedido.total_final),
-            'creado': pedido.creado.isoformat(),
-        })
-        for pago in pedido.pagos.all():
-            metodo = pago.get_metodo_display()
-            resumen['total_por_metodo'][metodo] = resumen['total_por_metodo'].get(metodo, 0) + float(pago.monto)
-        pedido.cerrado = True
-        pedido.save()
-
-    resumen['total_ventas'] = round(resumen['total_ventas'], 2)
-    resumen['total_impuestos'] = round(resumen['total_impuestos'], 2)
+        filtro['punto_venta_id'] = punto_venta_id
+    resumen['pedidos'] = [
+        {
+            'id': p.id,
+            'punto_venta': p.punto_venta.nombre,
+            'total': float(p.total_final),
+            'creado': p.creado.isoformat(),
+        }
+        for p in Pedido.objects.filter(**filtro).select_related('punto_venta')
+    ]
+    resumen['total_ventas'] = resumen['total_general']  # compatibilidad con clientes anteriores
     return Response(resumen)
+
+
+@api_view(['GET'])
+def resumen_ventas_view(request):
+    evento = get_object_or_404(Evento, activo=True)
+    punto_venta_id = request.query_params.get('punto_venta_id') or None
+    return Response(resumen_ventas(evento, punto_venta_id))
 
 
 @csrf_exempt
 @api_view(['POST'])
 def pedido_imprimir_local(request, pedido_id):
-    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     printer_name = request.data.get('printer_name')
     try:
         from .utils.local_printer import LocalPrinterService
@@ -254,7 +346,6 @@ def pedido_imprimir_pdf(request, pedido_id):
         formatter = TicketFormatter()
         lineas = formatter.formatear(pedido)
 
-        # Try to generate a PDF using ReportLab if available
         try:
             from reportlab.pdfgen import canvas
             from reportlab.lib.units import mm
@@ -270,7 +361,6 @@ def pedido_imprimir_pdf(request, pedido_id):
             c.setFont('Helvetica', 10)
             y = height - margin_top
             for l in lineas:
-                # simple wrap: drawString will clip if too long
                 c.drawString(6, y, l)
                 y -= line_height
                 if y < 10:
@@ -284,16 +374,10 @@ def pedido_imprimir_pdf(request, pedido_id):
             resp['Content-Disposition'] = f'inline; filename="pedido-{pedido.id}.pdf"'
             return resp
         except ImportError:
-            # Fallback: return an HTML preview the user can print/save as PDF from browser
             html_lines = '\n'.join(f"<div>{l}</div>" for l in lineas)
-            html = f"""
-                <html><head><meta charset='utf-8'><style>
+            html = f"""<html><head><meta charset='utf-8'><style>
                 body{{font-family:monospace;width:80mm;margin:0;padding:8px}}
-                .line{{white-space:pre-wrap;font-size:12px}}
-                </style></head><body>
-                {html_lines}
-                </body></html>
-            """
+                </style></head><body>{html_lines}</body></html>"""
             return HttpResponse(html, content_type='text/html')
 
     except Exception as e:

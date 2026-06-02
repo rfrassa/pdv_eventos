@@ -61,18 +61,6 @@ class PagoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('El monto debe ser mayor a 0.')
         return value
 
-    def validate(self, data):
-        metodo = data.get('metodo')
-        monto = data.get('monto')
-        monto_recibido = data.get('monto_recibido')
-
-        if monto_recibido is not None and metodo == 'EF' and monto_recibido < monto:
-            raise serializers.ValidationError(
-                'El monto recibido no puede ser menor al monto para pagos en efectivo.'
-            )
-
-        return data
-
 
 class PuntoVentaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -112,7 +100,7 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
         pagos = data.get('pagos', [])
         if pagos:
             total_pagos = sum(p['monto'] for p in pagos)
-            if abs(float(data['total_final']) - float(total_pagos)) > 0.01:
+            if data['total_final'] != total_pagos:
                 raise serializers.ValidationError(
                     f'La suma de los pagos (${total_pagos:.2f}) debe ser igual al total final (${data["total_final"]:.2f}).'
                 )
@@ -136,28 +124,18 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
 
 class PedidoUpdateSerializer(serializers.ModelSerializer):
     lineas = LineaPedidoSerializer(many=True, required=False)
-    pagos = PagoSerializer(many=True, required=False)
 
     class Meta:
         model = Pedido
-        fields = ['subtotal', 'descuento_porcentaje', 'total_impuestos', 'total_final', 'lineas', 'pagos']
+        fields = ['subtotal', 'descuento_porcentaje', 'total_impuestos', 'total_final', 'lineas']
 
     def validate(self, data):
         if 'descuento_porcentaje' in data and (data['descuento_porcentaje'] < 0 or data['descuento_porcentaje'] > 100):
             raise serializers.ValidationError('El descuento debe estar entre 0 y 100.')
-        pagos = data.get('pagos', None)
-        if pagos is not None:
-            total_final = data.get('total_final', self.instance.total_final if self.instance else 0)
-            total_pagos = sum(p['monto'] for p in pagos)
-            if abs(float(total_final) - float(total_pagos)) > 0.01:
-                raise serializers.ValidationError(
-                    f'La suma de los pagos (${total_pagos:.2f}) debe ser igual al total final (${float(total_final):.2f}).'
-                )
         return data
 
     def update(self, instance, validated_data):
         lineas_data = validated_data.pop('lineas', None)
-        pagos_data = validated_data.pop('pagos', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -165,10 +143,4 @@ class PedidoUpdateSerializer(serializers.ModelSerializer):
             instance.lineas.all().delete()
             for linea_data in lineas_data:
                 LineaPedido.objects.create(pedido=instance, **linea_data)
-        if pagos_data is not None:
-            instance.pagos.all().delete()
-            for pago_data in pagos_data:
-                Pago.objects.create(pedido=instance, **pago_data)
-            instance.cerrado = True
-            instance.save(update_fields=['cerrado'])
         return instance

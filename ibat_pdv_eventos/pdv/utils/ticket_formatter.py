@@ -9,7 +9,7 @@ class TicketFormatter:
         return texto.center(self.ancho)
 
     def _left_right(self, izquierda, derecha):
-        espacios = max(1, self.ancho - len(izquierda) - len(derecha))
+        espacios = self.ancho - len(izquierda) - len(derecha)
         return izquierda + ' ' * espacios + derecha
 
     def _linea_sep(self, char='-'):
@@ -35,6 +35,7 @@ class TicketFormatter:
 
     def formatear_comanda(self, pedido, categoria_nombre, etiqueta, sufijo):
         lineas = []
+        evento = pedido.punto_venta.evento
         lineas.append(self._center('CENTRO DE ESTUDIANTES'))
         lineas.append(self._center('IBAT San Jose'))
         lineas.append('')
@@ -59,6 +60,7 @@ class TicketFormatter:
 
     def formatear(self, pedido, categoria_nombre=None, etiqueta=None, sufijo=None):
         lineas = []
+        evento = pedido.punto_venta.evento
         lineas.append(self._center('CENTRO DE ESTUDIANTES'))
         lineas.append(self._center('IBAT San Jose'))
         lineas.append('')

@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git checkout -b feat/local-print-agent$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

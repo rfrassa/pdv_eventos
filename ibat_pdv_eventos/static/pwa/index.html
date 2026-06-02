@@ -29,6 +29,9 @@
                 <span class="sidebar-icon">&#128424;</span> <span id="btn-printer-label">Impresora</span>
                 <span id="btn-printer-name" style="display:block;font-size:0.75rem;color:var(--text-light);margin-top:2px"></span>
             </button>
+            <button class="sidebar-item" onclick="toggleSidebar();toggleDashboard()">
+                <span class="sidebar-icon">&#128202;</span> Tablero
+            </button>
             <button class="sidebar-item" onclick="toggleSidebar();selectPDV()">
                 <span class="sidebar-icon">&#128188;</span> Cambiar PDV
             </button>
@@ -42,18 +45,47 @@
             <span class="header-pdv" id="btn-pdv-select" onclick="toggleOrders()">PDV 1 <span class="badge-pendientes" id="badge-pendientes">0</span></span>
         </header>
 
-        <div class="top-actions">
-            <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
-            <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label">GUARDAR</span></button>
-            <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
-            <span class="top-total" id="top-total">$0.00</span>
-        </div>
+        <div class="app-shell">
+            <main class="left-col">
+                <div class="top-actions">
+                    <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
+                    <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label">GUARDAR</span></button>
+                    <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
+                    <button class="btn-sm" id="toggle-order-list">LISTA</button>
+                    <button class="btn-sm" id="toggle-compact">COMPACT</button>
+                    <span class="top-total" id="top-total">$0.00</span>
+                </div>
 
-        <div class="categories" id="categories"></div>
+                <div class="categories" id="categories"></div>
 
-        <div class="products-area" id="products-area">
-            <div class="empty-state" id="loading">Cargando productos...</div>
-            <div class="products-grid" id="products-grid"></div>
+                <div class="products-area" id="products-area">
+                    <div class="empty-state" id="loading">Cargando productos...</div>
+                    <div class="products-grid" id="products-grid"></div>
+                </div>
+                <div class="ticket-bar collapsed" id="ticket-bar">
+                    <div class="ticket-summary" onclick="toggleTicket()">
+                        <span class="ticket-count" id="ticket-count">0 productos</span>
+                        <span class="ticket-total" id="ticket-total">$0.00</span>
+                    </div>
+                    <div class="ticket-body" id="ticket-body"></div>
+                </div>
+            </main>
+
+            <aside class="order-list collapsed" id="order-list">
+                <div class="order-list-header">
+                    <button class="btn-back" id="toggle-order-list-close">&larr;</button>
+                    <div style="margin-left:8px">
+                        <div class="ticket-count" id="ticket-count-side">0 productos</div>
+                        <div class="ticket-total" id="ticket-total-side">$0.00</div>
+                    </div>
+                </div>
+                <div class="order-list-body" id="ticket-body-side"></div>
+                <div class="order-list-actions">
+                    <button class="btn-sm" onclick="nuevoTicket()">NUEVO</button>
+                    <button class="btn-sm" onclick="guardarPedido()"><span id="btn-guardar-label-side">GUARDAR</span></button>
+                    <button class="btn-cobrar-sm" onclick="abrirPago()">COBRAR</button>
+                </div>
+            </aside>
         </div>
 
         <div class="ticket-bar collapsed" id="ticket-bar">
@@ -104,9 +136,9 @@
                         <div class="pay-inline-rest">Restante <span id="pay-inline-remainder">$0.00</span></div>
                     </div>
                 </div>
-                <div id="pay-recibido-row" style="margin-top:8px">
-                    <label style="font-size:0.8rem;color:var(--text-light)">Monto recibido</label>
-                    <input type="number" class="amount-input" id="pay-recibido-input" min="0" step="0.01" placeholder="0.00 (opcional)" style="margin-top:2px">
+                <div id="pay-efectivo-row" style="display:none;margin-top:8px">
+                    <label style="font-size:0.8rem;color:var(--text-light)">Efectivo recibido</label>
+                    <input type="number" class="amount-input" id="pay-recibido-input" min="0" step="0.01" placeholder="0.00" style="margin-top:2px">
                 </div>
                 <button class="btn-clear-payments" onclick="limpiarPagos()" style="margin-top:8px">Limpiar todo</button>
             </div>
@@ -148,6 +180,23 @@
         </div>
     </div>
 
+    <!-- DASHBOARD OVERLAY -->
+    <div class="orders-overlay" id="dashboard-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="toggleDashboard()">&larr;</button>
+            <h2>Tablero en vivo</h2>
+            <span id="dashboard-status" class="dashboard-status-chip"></span>
+        </div>
+        <div class="dashboard-pdv-bar">
+            <select id="dashboard-pdv-select" class="dashboard-pdv-select" onchange="cambiarFiltroDashboard()">
+                <option value="">Todas las cajas</option>
+            </select>
+        </div>
+        <div class="orders-list" id="dashboard-body">
+            <div class="empty-state">Cargando...</div>
+        </div>
+    </div>
+
     <!-- PRINTER SELECTOR OVERLAY -->
     <div class="orders-overlay" id="printer-overlay">
         <div class="payment-header">
@@ -157,9 +206,6 @@
         </div>
         <div class="orders-list" id="printer-list">
             <div class="empty-state">Cargando impresoras...</div>
-        </div>
-        <div style="padding:16px">
-            <button class="btn-primary" style="width:100%" onclick="testImpresora()">Probar Impresora</button>
         </div>
     </div>
 
