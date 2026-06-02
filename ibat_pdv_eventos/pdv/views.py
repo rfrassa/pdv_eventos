@@ -204,7 +204,7 @@ def cierre_caja(request):
 
     pedidos_qs = Pedido.objects.filter(
         punto_venta__evento=evento,
-        cerrado=False,
+        cerrado=True,
     ).prefetch_related('pagos')
     if punto_venta_id:
         pedidos_qs = pedidos_qs.filter(punto_venta_id=punto_venta_id)
@@ -230,9 +230,6 @@ def cierre_caja(request):
         for pago in pedido.pagos.all():
             metodo = pago.get_metodo_display()
             resumen['total_por_metodo'][metodo] = resumen['total_por_metodo'].get(metodo, 0) + float(pago.monto)
-        pedido.cerrado = True
-        pedido.save()
-
     resumen['total_ventas'] = round(resumen['total_ventas'], 2)
     resumen['total_impuestos'] = round(resumen['total_impuestos'], 2)
     return Response(resumen)
