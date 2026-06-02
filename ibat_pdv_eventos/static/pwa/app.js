@@ -648,51 +648,15 @@ async function confirmarPago() {
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        if (isPreferBrowserPrint()) {
-            setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
-        } else {
-            (async () => {
-                const agentUrl = 'http://127.0.0.1:34567';
-                let agentAvailable = false;
-                try {
-                    const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
-                    agentAvailable = ping && ping.ok;
-                } catch (_) { agentAvailable = false; }
-
-                const categorias = new Set(pedidoCreado.lineas.map(l => l.categoria_nombre));
-                const htmls = [];
-                const mainHtml = buildTicketHtml(pedidoCreado);
-                if (mainHtml) htmls.push(mainHtml);
-                if (categorias.has('Comidas')) {
-                    const htmlC = buildComandaHtml(pedidoCreado, 'Comidas', 'COMIDAS', 'C');
-                    if (htmlC) htmls.push(htmlC);
-                }
-                if (categorias.has('Bebidas')) {
-                    const htmlB = buildComandaHtml(pedidoCreado, 'Bebidas', 'BEBIDAS', 'B');
-                    if (htmlB) htmls.push(htmlB);
-                }
-
-                if (agentAvailable && htmls.length > 0) {
-                    try {
-                        for (const h of htmls) {
-                            const resp = await fetch(agentUrl + '/print/html', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
-                                body: h,
-                            });
-                            if (!resp.ok) throw new Error('Agent print failed');
-                            await new Promise(r => setTimeout(r, 120));
-                        }
-                        showNotification('✅ Impreso en impresora local (cliente)');
-                        return;
-                    } catch (err) {
-                        console.warn('Local agent printing failed, falling back to browser print:', err);
-                    }
-                }
-
-                setTimeout(() => imprimirTicketNavegador(pedidoCreado.id), 500);
-            })();
-        }
+        apiFetch('/api/pedidos/' + pedidoCreado.id + '/imprimir-local/', {
+            method: 'POST',
+            body: JSON.stringify({ printer_name: state.printerName || undefined }),
+        }).then(res => {
+            if (res) showNotification('✅ Impresora: ' + res.impresora);
+        }).catch(e => {
+            console.warn('Impresión local falló, fallback navegador:', e);
+            imprimirTicketNavegador(pedidoCreado.id);
+        });
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
     }
