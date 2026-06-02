@@ -1178,6 +1178,87 @@ async function imprimirTicketNavegador(id) {
     }
 }
 
+// --- TABLERO EN VIVO ---
+let _dashboardInterval = null;
+
+function toggleDashboard() {
+    const overlay = document.getElementById('dashboard-overlay');
+    if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        clearInterval(_dashboardInterval);
+        _dashboardInterval = null;
+        return;
+    }
+    const sel = document.getElementById('dashboard-pdv-select');
+    sel.innerHTML = '<option value="">Todas las cajas</option>';
+    state.pdvs.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.nombre;
+        sel.appendChild(opt);
+    });
+    overlay.classList.add('open');
+    cargarDashboard();
+    _dashboardInterval = setInterval(cargarDashboard, 7000);
+}
+
+function cambiarFiltroDashboard() {
+    cargarDashboard();
+}
+
+async function cargarDashboard() {
+    const statusEl = document.getElementById('dashboard-status');
+    if (statusEl) statusEl.textContent = 'actualizando…';
+    const pdvId = document.getElementById('dashboard-pdv-select').value;
+    const url = '/api/resumen-ventas/' + (pdvId ? '?punto_venta_id=' + pdvId : '');
+    try {
+        const data = await apiFetch(url);
+        renderDashboard(data);
+        if (statusEl) statusEl.textContent = '● en vivo';
+    } catch (e) {
+        document.getElementById('dashboard-body').innerHTML =
+            '<div class="empty-state">Error: ' + e.message + '</div>';
+        if (statusEl) statusEl.textContent = 'sin conexión';
+    }
+}
+
+function renderDashboard(data) {
+    const totalFmt = '$' + parseFloat(data.total_general).toFixed(2);
+    const ventas = data.total_pedidos;
+
+    let metodosHtml = (data.total_por_metodo || []).map(m =>
+        `<div class="dashboard-row">
+            <span>${m.metodo_display}</span>
+            <span class="dashboard-value">$${parseFloat(m.total).toFixed(2)}</span>
+        </div>`
+    ).join('');
+    if (!metodosHtml) metodosHtml = '<div class="dashboard-empty">Sin ventas registradas</div>';
+
+    let productosHtml = (data.por_producto || []).map(p =>
+        `<div class="dashboard-row">
+            <span>${p.nombre}</span>
+            <span class="dashboard-units">${p.unidades} u.</span>
+        </div>`
+    ).join('');
+    if (!productosHtml) productosHtml = '<div class="dashboard-empty">Sin ventas registradas</div>';
+
+    document.getElementById('dashboard-body').innerHTML = `
+        <div class="dashboard-total-card">
+            <div class="dashboard-total-label">TOTAL VENDIDO</div>
+            <div class="dashboard-total-amount">${totalFmt}</div>
+            <div class="dashboard-total-sub">${ventas} venta${ventas !== 1 ? 's' : ''} cobrada${ventas !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="dashboard-section">
+            <div class="dashboard-section-title">Por m&eacute;todo de pago</div>
+            ${metodosHtml}
+        </div>
+        <div class="dashboard-section">
+            <div class="dashboard-section-title">Productos m&aacute;s vendidos</div>
+            ${productosHtml}
+        </div>
+    `;
+}
+
 // --- PDV SELECTOR (simple) ---
 function selectPDV() {
     const lineas = state.pdvs.map((p, i) => i + ': ' + p.nombre).join('\n');

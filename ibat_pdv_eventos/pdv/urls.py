@@ -15,5 +15,6 @@ urlpatterns = [
     path('api/test-print/', views.test_print, name='test-print'),
     path('api/impresoras/', views.impresoras_disponibles, name='impresoras-disponibles'),
     path('api/cierre-caja/', views.cierre_caja, name='cierre-caja'),
+    path('api/resumen-ventas/', views.resumen_ventas_view, name='resumen-ventas'),
     path('api/pdv/', views.pdvs_list, name='pdvs-list'),
 ]
