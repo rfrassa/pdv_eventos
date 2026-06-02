@@ -1,7 +1,7 @@
 import os
 import threading
 from django.conf import settings
-from django.db.models import F
+from django.db.models import F, Sum
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Evento, Pedido, Producto, PuntoVenta
+from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -196,43 +196,94 @@ def test_print(request):
         return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def resumen_ventas(evento, punto_venta_id=None):
+    """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
+    compartida por cierre_caja y resumen_ventas_view."""
+    filtro_pedido = {'punto_venta__evento': evento, 'cerrado': True}
+    filtro_pago   = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
+    filtro_linea  = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
+
+    if punto_venta_id:
+        filtro_pedido['punto_venta_id'] = punto_venta_id
+        filtro_pago['pedido__punto_venta_id'] = punto_venta_id
+        filtro_linea['pedido__punto_venta_id'] = punto_venta_id
+
+    totales = Pedido.objects.filter(**filtro_pedido).aggregate(
+        total=Sum('total_final'),
+        impuestos=Sum('total_impuestos'),
+    )
+    total_general  = round(float(totales['total']   or 0), 2)
+    total_impuestos = round(float(totales['impuestos'] or 0), 2)
+    total_pedidos  = Pedido.objects.filter(**filtro_pedido).count()
+
+    metodos_display = dict(Pago.METODOS)
+    por_metodo = [
+        {
+            'metodo': row['metodo'],
+            'metodo_display': metodos_display.get(row['metodo'], row['metodo']),
+            'total': round(float(row['total']), 2),
+        }
+        for row in (
+            Pago.objects.filter(**filtro_pago)
+            .values('metodo')
+            .annotate(total=Sum('monto'))
+            .order_by('-total')
+        )
+    ]
+
+    por_producto = [
+        {
+            'nombre': row['producto__nombre'],
+            'unidades': row['unidades'],
+        }
+        for row in (
+            LineaPedido.objects.filter(**filtro_linea)
+            .values('producto__nombre')
+            .annotate(unidades=Sum('cantidad'))
+            .order_by('-unidades')
+        )
+    ]
+
+    return {
+        'evento': evento.nombre,
+        'total_general': total_general,
+        'total_impuestos': total_impuestos,
+        'total_pedidos': total_pedidos,
+        'total_por_metodo': por_metodo,
+        'por_producto': por_producto,
+    }
+
+
 @csrf_exempt
 @api_view(['POST'])
 def cierre_caja(request):
     evento = get_object_or_404(Evento, activo=True)
     punto_venta_id = request.data.get('punto_venta_id')
 
-    pedidos_qs = Pedido.objects.filter(
-        punto_venta__evento=evento,
-        cerrado=True,
-    ).prefetch_related('pagos')
+    resumen = resumen_ventas(evento, punto_venta_id)
+
+    # Lista detallada de pedidos: exclusiva del cierre, no del tablero
+    filtro = {'punto_venta__evento': evento, 'cerrado': True}
     if punto_venta_id:
-        pedidos_qs = pedidos_qs.filter(punto_venta_id=punto_venta_id)
-
-    resumen = {
-        'evento': evento.nombre,
-        'total_ventas': 0,
-        'total_pedidos': pedidos_qs.count(),
-        'total_por_metodo': {},
-        'total_impuestos': 0,
-        'pedidos': [],
-    }
-
-    for pedido in pedidos_qs:
-        resumen['total_ventas'] += float(pedido.total_final)
-        resumen['total_impuestos'] += float(pedido.total_impuestos)
-        resumen['pedidos'].append({
-            'id': pedido.id,
-            'punto_venta': pedido.punto_venta.nombre,
-            'total': float(pedido.total_final),
-            'creado': pedido.creado.isoformat(),
-        })
-        for pago in pedido.pagos.all():
-            metodo = pago.get_metodo_display()
-            resumen['total_por_metodo'][metodo] = resumen['total_por_metodo'].get(metodo, 0) + float(pago.monto)
-    resumen['total_ventas'] = round(resumen['total_ventas'], 2)
-    resumen['total_impuestos'] = round(resumen['total_impuestos'], 2)
+        filtro['punto_venta_id'] = punto_venta_id
+    resumen['pedidos'] = [
+        {
+            'id': p.id,
+            'punto_venta': p.punto_venta.nombre,
+            'total': float(p.total_final),
+            'creado': p.creado.isoformat(),
+        }
+        for p in Pedido.objects.filter(**filtro).select_related('punto_venta')
+    ]
+    resumen['total_ventas'] = resumen['total_general']  # compatibilidad con clientes anteriores
     return Response(resumen)
+
+
+@api_view(['GET'])
+def resumen_ventas_view(request):
+    evento = get_object_or_404(Evento, activo=True)
+    punto_venta_id = request.query_params.get('punto_venta_id') or None
+    return Response(resumen_ventas(evento, punto_venta_id))
 
 
 @csrf_exempt

@@ -29,6 +29,9 @@
                 <span class="sidebar-icon">&#128424;</span> <span id="btn-printer-label">Impresora</span>
                 <span id="btn-printer-name" style="display:block;font-size:0.75rem;color:var(--text-light);margin-top:2px"></span>
             </button>
+            <button class="sidebar-item" onclick="toggleSidebar();toggleDashboard()">
+                <span class="sidebar-icon">&#128202;</span> Tablero
+            </button>
             <button class="sidebar-item" onclick="toggleSidebar();selectPDV()">
                 <span class="sidebar-icon">&#128188;</span> Cambiar PDV
             </button>
@@ -167,6 +170,23 @@
             <div style="width:32px"></div>
         </div>
         <div class="orders-list" id="detalle-body">
+            <div class="empty-state">Cargando...</div>
+        </div>
+    </div>
+
+    <!-- DASHBOARD OVERLAY -->
+    <div class="orders-overlay" id="dashboard-overlay">
+        <div class="payment-header">
+            <button class="btn-back" onclick="toggleDashboard()">&larr;</button>
+            <h2>Tablero en vivo</h2>
+            <span id="dashboard-status" class="dashboard-status-chip"></span>
+        </div>
+        <div class="dashboard-pdv-bar">
+            <select id="dashboard-pdv-select" class="dashboard-pdv-select" onchange="cambiarFiltroDashboard()">
+                <option value="">Todas las cajas</option>
+            </select>
+        </div>
+        <div class="orders-list" id="dashboard-body">
             <div class="empty-state">Cargando...</div>
         </div>
     </div>
