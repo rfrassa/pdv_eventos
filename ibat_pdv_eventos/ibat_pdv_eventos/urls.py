@@ -13,4 +13,8 @@ urlpatterns = [
 # staticfiles finders so app/static and admin files are available.
 if settings.DEBUG:
     from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+    from django.conf.urls.static import static
+
+    # Serve collected static files (STATIC_ROOT) as well as app/static in DEBUG
     urlpatterns += staticfiles_urlpatterns()
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
