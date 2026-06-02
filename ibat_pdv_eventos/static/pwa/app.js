@@ -1394,6 +1394,9 @@ document.addEventListener('keydown', function(e) {
 
     if (e.key === 'Escape') { e.preventDefault(); cerrarPago(); return; }
 
+    const shortcut = PAYMENT_SHORTCUTS.find(s => s.key.toLowerCase() === key || s.alt.toLowerCase() === key);
+    if (shortcut) { e.preventDefault(); seleccionarMetodo(shortcut.methodId); return; }
+
     if (e.key === 'Enter') {
         const el = document.activeElement;
         if (el === input || el === recibido || el === agregarBtn) {
