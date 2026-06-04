@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/pedidos/<int:pedido_id>/reimprimir/', views.pedido_reimprimir, name='pedido-reimprimir'),
     path('api/pedidos/<int:pedido_id>/imprimir-local/', views.pedido_imprimir_local, name='pedido-imprimir-local'),
     path('api/pedidos/<int:pedido_id>/imprimir-pdf/', views.pedido_imprimir_pdf, name='pedido-imprimir-pdf'),
+    path('api/pedidos/<int:pedido_id>/ticket-html/', views.pedido_ticket_html, name='pedido-ticket-html'),
     path('api/test-print/', views.test_print, name='test-print'),
     path('api/impresoras/', views.impresoras_disponibles, name='impresoras-disponibles'),
     path('api/cierre-caja/', views.cierre_caja, name='cierre-caja'),

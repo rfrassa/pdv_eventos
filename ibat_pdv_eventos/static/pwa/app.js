@@ -650,15 +650,7 @@ async function confirmarPago() {
         state.ticket = [];
         state.pedidoEditando = null;
         renderTicket();
-        apiFetch('/api/pedidos/' + pedidoCreado.id + '/imprimir-local/', {
-            method: 'POST',
-            body: JSON.stringify({ printer_name: state.printerName || undefined }),
-        }).then(res => {
-            if (res) showNotification('✅ Impresora: ' + res.impresora);
-        }).catch(e => {
-            console.warn('Impresión local falló, fallback navegador:', e);
-            imprimirTicketNavegador(pedidoCreado.id);
-        });
+        imprimirTicketNavegador(pedidoCreado.id);
     } catch (e) {
         showNotification('Error al procesar pago: ' + e.message, 'error');
     }
@@ -900,67 +892,26 @@ function cerrarDetalle() {
     state.detallePedidoId = null;
 }
 
-// --- IMPRIMIR: intento agente local (cliente) -> fallback servidor ---
-async function imprimirEnPC(id) {
-    const agentUrl = 'http://127.0.0.1:34567';
-    try {
-        // Try to detect local agent
-        let agentAvailable = false;
+// --- IMPRIMIR: iframe kiosk-print via /ticket-html/ ---
+function imprimirConIframe(id) {
+    const existing = document.getElementById('print-iframe');
+    if (existing) existing.remove();
+    const iframe = document.createElement('iframe');
+    iframe.id = 'print-iframe';
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;';
+    iframe.src = `${API_BASE}/api/pedidos/${id}/ticket-html/`;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
         try {
-            const ping = await fetch(agentUrl + '/ping', { cache: 'no-store', headers: { 'x-print-token': AGENT_TOKEN } });
-            agentAvailable = ping && ping.ok;
-        } catch (_) { agentAvailable = false; }
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch(e) { console.warn('iframe print error:', e); }
+        setTimeout(() => iframe.remove(), 4000);
+    };
+}
 
-        // Fetch pedido once (source of truth: backend)
-        const pedido = await apiFetch('/api/pedidos/' + id + '/');
-        const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
-
-        const htmls = [];
-        const mainHtml = buildTicketHtml(pedido);
-        if (mainHtml) htmls.push(mainHtml);
-        if (categorias.has('Comidas')) {
-            const htmlC = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
-            if (htmlC) htmls.push(htmlC);
-        }
-        if (categorias.has('Bebidas')) {
-            const htmlB = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
-            if (htmlB) htmls.push(htmlB);
-        }
-
-        if (agentAvailable && htmls.length > 0) {
-            try {
-                for (const h of htmls) {
-                    const resp = await fetch(agentUrl + '/print/html', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/html', 'x-print-token': AGENT_TOKEN },
-                        body: h,
-                    });
-                    if (!resp.ok) throw new Error('Agent print failed');
-                    // small delay between prints
-                    await new Promise(r => setTimeout(r, 120));
-                }
-                showNotification('✅ Impreso en impresora local (cliente)');
-                return;
-            } catch (err) {
-                console.warn('Local agent printing failed, falling back to server:', err);
-            }
-        }
-
-        // Fallback: send to backend server to handle printing
-        const res = await apiFetch('/api/pedidos/' + id + '/imprimir-local/', {
-            method: 'POST',
-            body: JSON.stringify({ printer_name: state.printerName || undefined }),
-        });
-        if (res.ok === false) {
-            showNotification('⚠️ Impresión local falló. Se abre impresión del navegador.', 'warning');
-            imprimirTicketNavegador(id);
-        } else {
-            showNotification('✅ Ticket enviado a: ' + res.impresora);
-        }
-    } catch (e) {
-        showNotification('⚠️ Error de impresión local. Se abre impresión del navegador.', 'warning');
-        imprimirTicketNavegador(id);
-    }
+async function imprimirEnPC(id) {
+    imprimirTicketNavegador(id);
 }
 
 // --- SELECTOR DE IMPRESORA ---
@@ -1152,7 +1103,7 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
         }
         if (!matched) return;
         const nota = l.nota ? '<br><small>(' + l.nota + ')</small>' : '';
-        lineasHtml += '<div style="padding:4px 0;font-size:14px">' + l.cantidad + 'x ' + l.producto_nombre + nota + '</div>';
+        lineasHtml += '<div style="padding:4px 0;font-size:16pt;font-weight:bold">' + l.cantidad + 'x ' + l.producto_nombre + nota + '</div>';
     });
     if (!lineasHtml) return null;
 
