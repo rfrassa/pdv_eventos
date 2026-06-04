@@ -1,6 +1,6 @@
 import logging
 
-from .local_printer import LocalPrinterService
+from .local_printer import LocalPrinterService, ip_para_pdv
 from .ticket_formatter import TicketFormatter
 
 logger = logging.getLogger(__name__)
@@ -11,12 +11,11 @@ class TicketHandler:
         self.formatter = TicketFormatter()
 
     def imprimir(self, pedido):
-        ip = pedido.punto_venta.impresora_ip
+        ip = ip_para_pdv(pedido.punto_venta)
         if not ip:
-            logger.warning(f"PDV {pedido.punto_venta.nombre} sin IP de impresora configurada")
+            logger.warning(f"PDV {pedido.punto_venta.nombre} sin IP configurada ni en PDV_IMPRESORAS")
             return False
 
-        # Pass PDV-configured IP to LocalPrinterService so TCP ESC/POS prints target correct device
         printer = LocalPrinterService(ip=ip)
         success = True
 
