@@ -1407,9 +1407,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     renderPreferBrowserToggle();
 
-    document.getElementById('toggle-order-list')?.addEventListener('click', () => document.getElementById('order-list')?.classList.toggle('collapsed'));
-    document.getElementById('toggle-order-list-close')?.addEventListener('click', () => document.getElementById('order-list')?.classList.add('collapsed'));
-    document.getElementById('toggle-compact')?.addEventListener('click', () => document.documentElement.classList.toggle('compact'));
 
     if (window.innerWidth >= 900) {
         document.getElementById('order-list')?.classList.remove('collapsed');
