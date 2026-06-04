@@ -497,7 +497,7 @@ button {
 }
 
 .pay-top-header {
-    background: var(--primary);
+    background: var(--success);
     color: white;
     padding: 12px 16px;
     display: flex;

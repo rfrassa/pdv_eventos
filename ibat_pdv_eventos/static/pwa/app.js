@@ -594,6 +594,8 @@ function agregarPago() {
 
     if (Math.abs(getRemainder()) <= 0.01) {
         showNotification('Total cubierto. Podés confirmar el pago.');
+        const confirmarBtn = document.getElementById('btn-confirm-payment');
+        if (confirmarBtn && !confirmarBtn.disabled) confirmarBtn.focus();
     }
 }
 
