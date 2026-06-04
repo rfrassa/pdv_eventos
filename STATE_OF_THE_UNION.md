@@ -205,3 +205,29 @@ print('OK')
 3. Probar PWA desde iOS (Safari)
 4. Agregar reconnect/reintento en `_enviar_tcp` si falla
 5. Monitorear logs del server para detectar errores de impresion en vivo
+
+---
+
+## Actualizacion 2026-06-04 — Sesion de impresion PDV
+
+### Realizado
+- Impresion migrada a kiosk-printing del navegador (imprimirTicketNavegador + buildComandaHtml). Eliminada la dependencia del agente FastAPI y del path TCP.
+- Mini PC cliente = solo Chrome con --kiosk-printing + impresora USB predeterminada. Sin Django local, sin agente.
+- Servidor central: 192.168.0.59:8080 (waitress).
+- Foco automatico en boton Confirmar Pago al cubrir el total.
+- Comandas con items en 16pt bold (lectura sin anteojos).
+- Endpoint /ticket-html/ creado pero NO en uso (path activo: imprimirTicketNavegador).
+- Stock: seguimiento MANUAL via campo disponible (on/off). Sin conteo de cantidades.
+- Fix: QuickEdit Mode de CMD congelaba el servidor; desactivar en Propiedades de la consola.
+- Todo en origin/main. Tag de restauracion: estable-pre-evento.
+
+### Pendiente (ventana de pruebas)
+- DEBUG=False en settings.
+- Evaluar PostgreSQL si hay varias cajas vendiendo en simultaneo (SQLite da "database is locked" bajo escritura concurrente).
+- Servidor como servicio de Windows (NSSM): elimina la consola que se puede congelar.
+- Verificar: comandas completas, cortes entre tickets, reimpresion usa el path nuevo.
+
+### Backlog proximo evento
+- Control de gestion de stock con cantidades (descuento automatico + alerta de agotado).
+- Consolidar formatter: hay logica de ticket en Python (ticket_formatter.py) y en JS (buildTicketHtml). Unificar en una sola fuente.
+- Limpiar worktrees viejos de agentes y archivos tmp_*.py.
