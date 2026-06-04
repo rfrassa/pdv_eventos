@@ -296,8 +296,8 @@ def pedido_imprimir_local(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     printer_name = request.data.get('printer_name')
     try:
-        from .utils.local_printer import LocalPrinterService
-        service = LocalPrinterService(ip=pedido.punto_venta.impresora_ip, printer_name=printer_name)
+        from .utils.local_printer import LocalPrinterService, ip_para_pdv
+        service = LocalPrinterService(ip=ip_para_pdv(pedido.punto_venta), printer_name=printer_name)
         nombre = service.print_ticket(pedido)
         Pedido.objects.filter(id=pedido_id).update(veces_impreso=F('veces_impreso') + 1)
         return Response({'ok': True, 'mensaje': f'Ticket enviado a {nombre}', 'impresora': nombre})

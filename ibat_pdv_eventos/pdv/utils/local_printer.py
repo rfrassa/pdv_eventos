@@ -9,6 +9,18 @@ logger = logging.getLogger(__name__)
 IP_IMPRESORA = '192.168.0.67'
 PUERTO_IMPRESORA = 9100
 
+PDV_IMPRESORAS = {
+    'PDV1': '192.168.0.58',
+    'PDV2': '192.168.0.59',
+    'PDV3': '192.168.0.60',
+}
+
+
+def ip_para_pdv(pdv):
+    if pdv.impresora_ip:
+        return pdv.impresora_ip
+    return PDV_IMPRESORAS.get(f'PDV{pdv.id}')
+
 
 class EscposBuffer:
     def __init__(self):
@@ -196,7 +208,8 @@ class LocalPrinterService:
         return any(h in name for h in escpos_hints)
 
     def _build_text_ticket_data(self, lineas):
-        text = '\r\n'.join(linea.rstrip('\n') for linea in lineas) + '\r\n\r\n'
+        from .ticket_formatter import ANCHO_TICKET
+        text = '\r\n'.join(seg.render_plano(ANCHO_TICKET).rstrip('\n') for seg in lineas) + '\r\n\r\n'
         return text.encode('cp1252', errors='replace')
 
     def _send_text_data(self, text_data, etiqueta=''):
@@ -292,13 +305,15 @@ class LocalPrinterService:
 
         buf = EscposBuffer()
         buf._buf.extend(b'\x1b\x74\x10')
-        buf.set(align='left', bold=False)
         logger.warning(f'[_print_escpos{etiqueta}] {len(lineas)} lineas')
-        for linea in lineas:
-            buf.text(linea.rstrip('\n') + '\n')
+        for seg in lineas:
+            buf.set(align=seg.alinear, bold=seg.negrita,
+                    double_height=seg.doble_alto,
+                    normal_textsize=not seg.doble_alto)
+            buf.text(seg.texto.rstrip('\n') + '\n')
         buf._buf.extend(b'\x1b\x64\x04\x1b\x69')
         data = b'\x1b\x40' + buf.build()
-        logger.warning(f'[_print_escpos{etiqueta}] buffer: {len(data)} bytes, primeras 3 lineas: {lineas[:3]}')
+        logger.warning(f'[_print_escpos{etiqueta}] buffer: {len(data)} bytes')
         destino = self._send_raw_data(data, etiqueta=etiqueta)
         return destino
 
