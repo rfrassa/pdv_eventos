@@ -358,6 +358,70 @@ def pedido_imprimir_pdf(request, pedido_id):
 
 
 @api_view(['GET'])
+def pedido_ticket_html(request, pedido_id):
+    import html as htmllib
+    pedido = get_object_or_404(
+        Pedido.objects.select_related('punto_venta__evento')
+                      .prefetch_related('lineas__producto__categoria', 'pagos'),
+        id=pedido_id,
+    )
+    from .utils.ticket_formatter import TicketFormatter
+    formatter = TicketFormatter()
+
+    def segs_a_html(segs):
+        out = []
+        for seg in segs:
+            t = seg.texto
+            if len(t) >= 4 and t.replace('=', '') == '':
+                out.append('<hr class="thick">'); continue
+            if len(t) >= 4 and t.replace('-', '') == '':
+                out.append('<hr class="thin">');  continue
+            if not t.strip():
+                out.append('<p class="spacer"> </p>'); continue
+            cls = []
+            if seg.doble_alto and seg.negrita: cls.append('hdr-xl')
+            elif seg.negrita:                  cls.append('hdr')
+            if   seg.alinear == 'center':      cls.append('center')
+            elif seg.alinear == 'right':       cls.append('right')
+            attr = f' class="{" ".join(cls)}"' if cls else ''
+            out.append(f'<p{attr}>{htmllib.escape(t)}</p>')
+        return '\n'.join(out)
+
+    secciones = []
+    main_segs = formatter.formatear(pedido)
+    if main_segs:
+        secciones.append(segs_a_html(main_segs))
+
+    cats = {l.producto.categoria.nombre for l in pedido.lineas.all()}
+    for cat, etiqueta, sufijo in [('Comidas', 'COMIDAS', 'C'), ('Bebidas', 'BEBIDAS', 'B')]:
+        if cat in cats:
+            segs = formatter.formatear_comanda(pedido, cat, etiqueta, sufijo)
+            if segs:
+                secciones.append(segs_a_html(segs))
+
+    PB = '<div style="page-break-after:always"></div>'
+    body = f'\n{PB}\n'.join(secciones)
+
+    css = (
+        '@page{size:80mm auto;margin:0}'
+        'body{width:80mm;font-family:"Courier New",Courier,monospace;font-size:9pt;margin:0;padding:2mm 3mm}'
+        'p{margin:0;line-height:1.3;white-space:pre-wrap}'
+        '.hdr-xl{font-size:12pt;font-weight:bold;text-align:center;white-space:normal}'
+        '.hdr{font-weight:bold}'
+        '.center{text-align:center;white-space:normal}'
+        '.right{text-align:right;white-space:normal}'
+        'hr.thin{border:none;border-top:1px solid #000;margin:.5mm 0}'
+        'hr.thick{border:none;border-top:2px solid #000;margin:.5mm 0}'
+        '.spacer{line-height:3mm}'
+    )
+    html_doc = (
+        f'<!DOCTYPE html><html><head><meta charset="utf-8">'
+        f'<style>{css}</style></head><body>{body}</body></html>'
+    )
+    return HttpResponse(html_doc, content_type='text/html; charset=utf-8')
+
+
+@api_view(['GET'])
 def impresoras_disponibles(request):
     try:
         from .utils.local_printer import LocalPrinterService
