@@ -3,7 +3,7 @@ chcp 65001 >nul
 REM Lanzar Google Chrome en modo kiosko con impresion automática (--kiosk-printing)
 
 REM Ajusta la URL del servidor si es necesario
-set SERVER_URL=http://192.168.0.53:8080/
+set SERVER_URL=http://192.168.0.200:8080/
 
 REM Rutas habituales de Chrome
 set CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
