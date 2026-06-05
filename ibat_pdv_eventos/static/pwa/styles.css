@@ -324,20 +324,34 @@ button {
 .products-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    gap: 6px;
 }
 
 .product-card {
     background: var(--card);
     border-radius: var(--radius);
-    padding: 14px 12px;
+    padding: 6px 12px;
     box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     cursor: pointer;
     user-select: none;
     transition: transform 0.1s;
+}
+
+/* móvil táctil */
+@media (max-width: 899px) {
+    .products-grid {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .product-card {
+        min-height: 48px;
+        padding: 10px 12px;
+        gap: 2px;
+    }
 }
 
 .product-card:active {
