@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import base64
 from io import BytesIO
 from datetime import datetime
@@ -82,25 +83,29 @@ qr_img = qr.make_image(fill_color="black", back_color="white")
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-qr_path = os.path.join(script_dir, 'qr_precios.png')
+# Crear carpeta de salida para Netlify (index.html + imágenes separadas)
+site_dir = os.path.join(script_dir, 'precios_site')
+os.makedirs(site_dir, exist_ok=True)
+
+qr_path = os.path.join(site_dir, 'qr.png')
 qr_img.save(qr_path)
-print(f"   Guardado: qr_precios.png")
+# También guardar copia suelta para imprimir
+qr_print_path = os.path.join(script_dir, 'qr_precios.png')
+qr_img.save(qr_print_path)
+print("   Guardado: qr.png")
 
-buf = BytesIO()
-qr_img.save(buf, format='PNG')
-qr_data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+# --- Logos (se copian a la carpeta, el HTML los referencia por nombre) ---
+def copiar_imagen(origen, destino_nombre):
+    src = os.path.join(script_dir, origen)
+    if os.path.exists(src):
+        shutil.copy2(src, os.path.join(site_dir, destino_nombre))
+        return True
+    return False
 
-# --- Logos ---
-def cargar_imagen_b64(path):
-    if os.path.exists(path):
-        with open(path, 'rb') as f:
-            return "data:image/png;base64," + base64.b64encode(f.read()).decode()
-    return None
-
-logo_ibat_uri = cargar_imagen_b64(os.path.join(script_dir, 'logo_ibat.png'))
-logo_cde_uri  = cargar_imagen_b64(os.path.join(script_dir, 'logo_cde.png'))
-print("   Logo IBAT: " + ("encontrado" if logo_ibat_uri else "no encontrado (logo_ibat.png)"))
-print("   Logo CDE:  " + ("encontrado" if logo_cde_uri  else "no encontrado (logo_cde.png)"))
+tiene_ibat = copiar_imagen('logo_ibat.png', 'logo_ibat.png')
+tiene_cde  = copiar_imagen('logo_cde.png',  'logo_cde.png')
+print("   Logo IBAT: " + ("copiado" if tiene_ibat else "no encontrado (logo_ibat.png)"))
+print("   Logo CDE:  " + ("copiado" if tiene_cde  else "no encontrado (logo_cde.png)"))
 
 # --- Paso 4: construir HTML ---
 print("Paso 4/5: Generando HTML...")
@@ -252,20 +257,20 @@ html = f"""<!DOCTYPE html>
 <body>
     <header>
         <div class="header-inner">
-            {('<div class="logo-wrap"><img src="' + logo_ibat_uri + '" alt="IBAT San Jose"></div>') if logo_ibat_uri else ''}
+            {('<div class="logo-wrap"><img src="logo_ibat.png" alt="IBAT San Jose"></div>') if tiene_ibat else ''}
             <div class="header-text">
                 <div class="header-etiqueta">Lista de precios</div>
                 <h1>{evento.nombre}</h1>
                 <div class="header-fecha">{fecha_en_espanol(evento.fecha)}</div>
             </div>
-            {('<div class="logo-wrap"><img src="' + logo_cde_uri + '" alt="Centro de Estudiantes"></div>') if logo_cde_uri else ''}
+            {('<div class="logo-wrap"><img src="logo_cde.png" alt="Centro de Estudiantes"></div>') if tiene_cde else ''}
         </div>
     </header>
     <main>
         {secciones}
     </main>
     <footer>
-        <img src="{qr_data_uri}" alt="QR">
+        <img src="qr.png" alt="QR">
         <div class="qr-label">Escaneá para ver los precios</div>
         <div class="qr-url">{URL_PRECIOS}</div>
     </footer>
@@ -273,23 +278,26 @@ html = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-html_path = os.path.join(script_dir, 'index.html')
+html_path = os.path.join(site_dir, 'index.html')
 with open(html_path, 'w', encoding='utf-8') as f:
     f.write(html)
-print(f"   Guardado: index.html")
+print("   Guardado: precios_site/index.html")
 
 # --- Paso 5: resumen ---
 print()
 print("Paso 5/5: ¡Listo!")
 print()
 print("Archivos generados:")
-print(f"  index.html              (subir a Netlify)")
-print(f"  qr_precios.png          (imprimir para el evento)")
+print("  precios_site/           (carpeta entera -> arrastrar a Netlify)")
+print("    index.html")
+print("    qr.png")
+print("    logo_ibat.png" if tiene_ibat else "    logo_ibat.png (falta)")
+print("    logo_cde.png"  if tiene_cde  else "    logo_cde.png  (falta)")
+print("  qr_precios.png          (copia para imprimir)")
 print()
 print("Para publicar en Netlify:")
-print("  1. https://app.netlify.com > 'Add new site' > 'Deploy manually'")
-print("  2. Arrastrar precios_pena_2026.html a la zona de deploy")
-print("  3. 'Domain settings' > agregar dominio: precios.ibatsajose.edu.ar")
+print("  1. https://app.netlify.com > sitio existente > Deploys")
+print("  2. Arrastrar la CARPETA precios_site/ completa a la zona de deploy")
 print()
 print("DNS (en el proveedor del dominio):")
 print("  Tipo: CNAME  |  Nombre: precios  |  Valor: <sitio>.netlify.app")
