@@ -17,7 +17,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ibat_pdv_eventos.settings')
 import django
 django.setup()
 
-from pdv.models import Evento, Categoria
+from collections import defaultdict
+from pdv.models import Evento, Producto
 
 URL_PRECIOS = 'https://precios.ibatsajose.edu.ar'
 
@@ -53,19 +54,15 @@ print(f"   {evento.nombre}  —  {fecha_en_espanol(evento.fecha)}")
 
 # --- Paso 2: productos ---
 print("Paso 2/5: Cargando productos disponibles...")
-grupos = []
-categorias_vacias = []
-for cat in Categoria.objects.filter(evento=evento).order_by('nombre'):
-    productos = list(cat.productos.filter(disponible=True).order_by('nombre'))
-    if productos:
-        grupos.append((cat.nombre, productos))
-    else:
-        categorias_vacias.append(cat.nombre)
+# Agrupa por nombre de categoría directamente desde productos del evento.
+# Esto funciona aunque las categorías estén asociadas a otro evento en la BD.
+agrupado = defaultdict(list)
+for p in Producto.objects.filter(evento=evento, disponible=True).order_by('categoria__nombre', 'nombre'):
+    agrupado[p.categoria.nombre].append(p)
+grupos = sorted(agrupado.items())
 
-if categorias_vacias:
-    print(f"   AVISO — categorías sin productos (se omiten): {', '.join(categorias_vacias)}")
 total = sum(len(p) for _, p in grupos)
-print(f"   {total} productos en {len(grupos)} categorías")
+print(f"   {total} productos en {len(grupos)} categorias")
 
 if not grupos:
     print("ERROR: No hay productos disponibles para mostrar.")
@@ -248,13 +245,13 @@ print()
 print("Paso 5/5: ¡Listo!")
 print()
 print("Archivos generados:")
-print(f"  precios_pena_2026.html  → subir a Netlify")
-print(f"  qr_precios.png          → imprimir para el evento")
+print(f"  precios_pena_2026.html  (subir a Netlify)")
+print(f"  qr_precios.png          (imprimir para el evento)")
 print()
 print("Para publicar en Netlify:")
-print("  1. https://app.netlify.com → 'Add new site' → 'Deploy manually'")
+print("  1. https://app.netlify.com > 'Add new site' > 'Deploy manually'")
 print("  2. Arrastrar precios_pena_2026.html a la zona de deploy")
-print("  3. 'Domain settings' → agregar dominio: precios.ibatsajose.edu.ar")
+print("  3. 'Domain settings' > agregar dominio: precios.ibatsajose.edu.ar")
 print()
 print("DNS (en el proveedor del dominio):")
 print("  Tipo: CNAME  |  Nombre: precios  |  Valor: <sitio>.netlify.app")
