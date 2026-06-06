@@ -393,7 +393,7 @@ def pedido_ticket_html(request, pedido_id):
         secciones.append(segs_a_html(main_segs))
 
     cats = {l.producto.categoria.nombre for l in pedido.lineas.all()}
-    for cat, etiqueta, sufijo in [('Comidas', 'COMIDAS', 'C'), ('Bebidas', 'BEBIDAS', 'B')]:
+    for cat, etiqueta, sufijo in [('Comidas', 'COMIDAS', 'C'), ('Bebidas', 'BEBIDAS', 'B'), ('Choripan', 'CHORIPAN', 'CH')]:
         if cat in cats:
             segs = formatter.formatear_comanda(pedido, cat, etiqueta, sufijo)
             if segs:

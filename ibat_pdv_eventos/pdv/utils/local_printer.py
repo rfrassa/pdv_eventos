@@ -377,6 +377,15 @@ class LocalPrinterService:
             else:
                 logger.warning(f'[print_ticket #{pedido.id}] comanda Bebidas retorno None')
 
+        self._pausa(0.5)
+
+        if 'Choripan' in categorias:
+            n = self._imprimir_comanda(pedido, 'Choripan', 'CHORIPAN', 'CH')
+            if n:
+                nombre = n
+            else:
+                logger.warning(f'[print_ticket #{pedido.id}] comanda Choripan retorno None')
+
         if nombre:
             logger.warning(f'[print_ticket #{pedido.id}] todo enviado a: {nombre}')
         else:
