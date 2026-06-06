@@ -4,3 +4,4 @@ python-escpos
 pywin32
 waitress
 pyinstaller
+qrcode[pil]
