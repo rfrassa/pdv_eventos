@@ -90,6 +90,18 @@ buf = BytesIO()
 qr_img.save(buf, format='PNG')
 qr_data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
+# --- Logos ---
+def cargar_imagen_b64(path):
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            return "data:image/png;base64," + base64.b64encode(f.read()).decode()
+    return None
+
+logo_ibat_uri = cargar_imagen_b64(os.path.join(script_dir, 'logo_ibat.png'))
+logo_cde_uri  = cargar_imagen_b64(os.path.join(script_dir, 'logo_cde.png'))
+print("   Logo IBAT: " + ("encontrado" if logo_ibat_uri else "no encontrado (logo_ibat.png)"))
+print("   Logo CDE:  " + ("encontrado" if logo_cde_uri  else "no encontrado (logo_cde.png)"))
+
 # --- Paso 4: construir HTML ---
 print("Paso 4/5: Generando HTML...")
 
@@ -127,27 +139,47 @@ html = f"""<!DOCTYPE html>
             margin: 0 auto;
         }}
         header {{
-            background: linear-gradient(135deg, #7a1c2e 0%, #4a0f1a 100%);
+            background: linear-gradient(160deg, #b02040 0%, #7a1c2e 50%, #2d0a14 100%);
             color: white;
-            text-align: center;
-            padding: 32px 20px 28px;
+            padding: 22px 20px 26px;
+        }}
+        .header-inner {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }}
+        .logo-wrap {{
+            background: white;
+            border-radius: 10px;
+            padding: 6px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+            flex-shrink: 0;
+        }}
+        .logo-wrap img {{
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+            display: block;
+        }}
+        .header-text {{
+            flex: 1;
         }}
         .header-etiqueta {{
-            font-size: 11px;
+            font-size: 10px;
             letter-spacing: 3px;
             text-transform: uppercase;
             color: #e8b86d;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }}
         header h1 {{
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 800;
             line-height: 1.2;
         }}
         .header-fecha {{
-            font-size: 14px;
+            font-size: 13px;
             color: #f0d9a0;
-            margin-top: 8px;
+            margin-top: 6px;
         }}
         main {{
             padding: 16px 12px 24px;
@@ -219,9 +251,15 @@ html = f"""<!DOCTYPE html>
 </head>
 <body>
     <header>
-        <div class="header-etiqueta">Lista de precios</div>
-        <h1>{evento.nombre}</h1>
-        <div class="header-fecha">{fecha_en_espanol(evento.fecha)}</div>
+        <div class="header-inner">
+            {('<div class="logo-wrap"><img src="' + logo_ibat_uri + '" alt="IBAT San Jose"></div>') if logo_ibat_uri else ''}
+            <div class="header-text">
+                <div class="header-etiqueta">Lista de precios</div>
+                <h1>{evento.nombre}</h1>
+                <div class="header-fecha">{fecha_en_espanol(evento.fecha)}</div>
+            </div>
+            {('<div class="logo-wrap"><img src="' + logo_cde_uri + '" alt="Centro de Estudiantes"></div>') if logo_cde_uri else ''}
+        </div>
     </header>
     <main>
         {secciones}
