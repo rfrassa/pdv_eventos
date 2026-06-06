@@ -64,7 +64,7 @@ button {
 /* sidebar oculto en móvil */
 .order-list { display: none; }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
     #app {
         width: 100%;
         max-width: none;
@@ -337,7 +337,7 @@ button {
 }
 
 /* móvil táctil */
-@media (max-width: 899px) {
+@media (max-width: 767px) {
     .products-grid {
         grid-template-columns: 1fr;
         gap: 6px;
