@@ -20,7 +20,7 @@ django.setup()
 from collections import defaultdict
 from pdv.models import Evento, Producto
 
-URL_PRECIOS = 'https://precios.ibatsajose.edu.ar'
+URL_PRECIOS = 'https://precios.ibatsanjose.edu.ar'
 
 MESES = {
     1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
@@ -235,17 +235,17 @@ html = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-html_path = os.path.join(script_dir, 'precios_pena_2026.html')
+html_path = os.path.join(script_dir, 'index.html')
 with open(html_path, 'w', encoding='utf-8') as f:
     f.write(html)
-print(f"   Guardado: precios_pena_2026.html")
+print(f"   Guardado: index.html")
 
 # --- Paso 5: resumen ---
 print()
 print("Paso 5/5: ¡Listo!")
 print()
 print("Archivos generados:")
-print(f"  precios_pena_2026.html  (subir a Netlify)")
+print(f"  index.html              (subir a Netlify)")
 print(f"  qr_precios.png          (imprimir para el evento)")
 print()
 print("Para publicar en Netlify:")
