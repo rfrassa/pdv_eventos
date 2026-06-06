@@ -34,6 +34,21 @@ def formatear_precio(precio):
     entero = int(precio)
     return "$ " + f"{entero:,}".replace(",", ".")
 
+def ordenar_productos(cat_nombre, productos):
+    if cat_nombre != 'Bebidas':
+        return productos
+    def clave(p):
+        n = p.nombre.lower()
+        if 'fernet' in n:
+            # Agrupa Jarra y Vaso Fernet juntos, ordenados por nombre
+            return (1, p.nombre.lower(), 0)
+        elif n.startswith('vino'):
+            # Vinos ordenados por precio ascendente
+            return (2, '', int(p.precio))
+        else:
+            return (0, p.nombre.lower(), 0)
+    return sorted(productos, key=clave)
+
 def fecha_en_espanol(d):
     return f"{d.day} de {MESES[d.month]} de {d.year}"
 
@@ -129,7 +144,7 @@ print("Paso 4/5: Generando HTML...")
 secciones = ""
 for cat_nombre, productos in grupos:
     items = ""
-    for p in productos:
+    for p in ordenar_productos(cat_nombre, productos):
         items += f"""
             <div class="item">
                 <span class="item-nombre">{p.nombre}</span>
