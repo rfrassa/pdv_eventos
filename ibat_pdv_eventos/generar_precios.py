@@ -4,6 +4,7 @@ import shutil
 import base64
 from io import BytesIO
 from datetime import datetime
+from PIL import Image
 
 # Verificar qrcode antes de arrancar Django
 try:
@@ -87,11 +88,26 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 site_dir = os.path.join(script_dir, 'precios_site')
 os.makedirs(site_dir, exist_ok=True)
 
+# Incrustar logo IBAT en el centro del QR (ERROR_CORRECT_H soporta hasta 30% tapado)
+logo_ibat_path = os.path.join(script_dir, 'logo_ibat.png')
+qr_pil = qr_img.convert('RGB')
+if os.path.exists(logo_ibat_path):
+    logo = Image.open(logo_ibat_path).convert('RGB')
+    qr_w, qr_h = qr_pil.size
+    logo_size = int(qr_w * 0.26)
+    logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
+    pad = 8
+    bloque = Image.new('RGB', (logo_size + pad * 2, logo_size + pad * 2), 'white')
+    bloque.paste(logo, (pad, pad))
+    bw, bh = bloque.size
+    qr_pil.paste(bloque, ((qr_w - bw) // 2, (qr_h - bh) // 2))
+    print("   Logo IBAT incrustado en el QR")
+
 qr_path = os.path.join(site_dir, 'qr.png')
-qr_img.save(qr_path)
+qr_pil.save(qr_path)
 # También guardar copia suelta para imprimir
 qr_print_path = os.path.join(script_dir, 'qr_precios.png')
-qr_img.save(qr_print_path)
+qr_pil.save(qr_print_path)
 print("   Guardado: qr.png")
 
 # --- Logos (se copian a la carpeta, el HTML los referencia por nombre) ---
