@@ -817,7 +817,12 @@ async function toggleDetalle(id) {
         const estadoClass = p.cerrado ? 'cerrado' : 'abierto';
 
         const categorias = new Set(p.lineas.map(l => l.categoria_nombre));
-        const tieneSplit = categorias.has('Comidas') && categorias.has('Bebidas');
+        const comandasSufijos = [
+            categorias.has('Bebidas') ? '#' + p.id + '-B' : null,
+            categorias.has('Comidas') ? '#' + p.id + '-C' : null,
+            categorias.has('Choripan') ? '#' + p.id + '-CH' : null,
+        ].filter(Boolean);
+        const tieneSplit = comandasSufijos.length >= 2;
 
         let itemsHtml = '';
         p.lineas.forEach(l => {
@@ -850,7 +855,7 @@ async function toggleDetalle(id) {
         });
 
         const ticketIds = tieneSplit
-            ? '#' + p.id + '-B / #' + p.id + '-C'
+            ? comandasSufijos.join(' / ')
             : '#' + p.id;
 
         body.innerHTML = `
@@ -1174,6 +1179,10 @@ async function imprimirTicketNavegador(id) {
         if (categorias.has('Bebidas')) {
             const htmlBebidas = buildComandaHtml(pedido, 'Bebidas', 'BEBIDAS', 'B');
             if (htmlBebidas) htmlParts.push(htmlBebidas);
+        }
+        if (categorias.has('Choripan')) {
+            const htmlChoripan = buildComandaHtml(pedido, 'Choripan', 'CHORIPAN', 'CH');
+            if (htmlChoripan) htmlParts.push(htmlChoripan);
         }
 
         if (htmlParts.length === 0) return;
