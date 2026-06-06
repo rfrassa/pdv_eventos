@@ -1408,7 +1408,7 @@ document.addEventListener('DOMContentLoaded', function() {
     renderPreferBrowserToggle();
 
 
-    if (window.innerWidth >= 900) {
+    if (window.innerWidth >= 768) {
         document.getElementById('order-list')?.classList.remove('collapsed');
         const tb = document.getElementById('ticket-bar');
         if (tb) tb.style.display = 'none';
