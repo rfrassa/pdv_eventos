@@ -150,6 +150,13 @@ html = f"""<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Precios — {evento.nombre}</title>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-Y54LRF62B0"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+      gtag('config', 'G-Y54LRF62B0');
+    </script>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
