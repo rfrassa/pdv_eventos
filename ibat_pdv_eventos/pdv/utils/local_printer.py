@@ -330,10 +330,11 @@ class LocalPrinterService:
     def _categorias_en_pedido(self, pedido):
         return set(l.producto.categoria.nombre for l in pedido.lineas.all())
 
-    def _imprimir_comanda(self, pedido, categoria_nombre, etiqueta, sufijo):
+    def _imprimir_comanda(self, pedido, categorias, etiqueta, sufijo):
+        # categorias: lista de nombres de categoría a incluir en esta comanda
         from .ticket_formatter import TicketFormatter
         formatter = TicketFormatter()
-        lineas = formatter.formatear_comanda(pedido, categoria_nombre, etiqueta, sufijo)
+        lineas = formatter.formatear_comanda(pedido, categorias, etiqueta, sufijo)
         logger.warning(f'[_imprimir_comanda {etiqueta} #{pedido.id}] {len(lineas)} lineas generadas')
         if not lineas:
             logger.warning(f'[_imprimir_comanda {etiqueta} #{pedido.id}] sin lineas, salteando')
@@ -349,8 +350,8 @@ class LocalPrinterService:
             if self._is_local_printer_mode():
                 raise RuntimeError(f'Impresora local no disponible: {self.printer_name}')
             raise RuntimeError(f'Impresora no disponible en {self.ip}')
-        categorias = self._categorias_en_pedido(pedido)
-        logger.warning(f'[print_ticket #{pedido.id}] categorias={categorias}, total_lineas={pedido.lineas.count()}')
+        cats_presentes = self._categorias_en_pedido(pedido)
+        logger.warning(f'[print_ticket #{pedido.id}] categorias={cats_presentes}, total_lineas={pedido.lineas.count()}')
         nombre = None
 
         n = self._imprimir_html(pedido)
@@ -361,30 +362,29 @@ class LocalPrinterService:
 
         self._pausa(0.5)
 
-        if 'Comidas' in categorias:
-            n = self._imprimir_comanda(pedido, 'Comidas', 'COMIDAS', 'C')
+        # Agrupar por comanda_sufijo — usar IDs reales de las líneas, no filtrar por evento
+        # (los productos pueden apuntar a categorías de otro evento en setups cross-event)
+        from pdv.models import Categoria
+        cat_ids = set(l.producto.categoria_id for l in pedido.lineas.all())
+        cats_db = Categoria.objects.filter(
+            id__in=cat_ids,
+            comanda_sufijo__gt='',
+        )
+        grupos = {}
+        for cat in cats_db:
+            g = grupos.setdefault(cat.comanda_sufijo, {
+                'etiqueta': cat.comanda_etiqueta or cat.comanda_sufijo,
+                'categorias': [],
+            })
+            g['categorias'].append(cat.nombre)
+
+        for sufijo, grupo in grupos.items():
+            n = self._imprimir_comanda(pedido, grupo['categorias'], grupo['etiqueta'], sufijo)
             if n:
                 nombre = n
             else:
-                logger.warning(f'[print_ticket #{pedido.id}] comanda Comidas retorno None')
-
-        self._pausa(0.5)
-
-        if 'Bebidas' in categorias:
-            n = self._imprimir_comanda(pedido, 'Bebidas', 'BEBIDAS', 'B')
-            if n:
-                nombre = n
-            else:
-                logger.warning(f'[print_ticket #{pedido.id}] comanda Bebidas retorno None')
-
-        self._pausa(0.5)
-
-        if 'Choripan' in categorias:
-            n = self._imprimir_comanda(pedido, 'Choripan', 'CHORIPAN', 'CH')
-            if n:
-                nombre = n
-            else:
-                logger.warning(f'[print_ticket #{pedido.id}] comanda Choripan retorno None')
+                logger.warning(f'[print_ticket #{pedido.id}] comanda {sufijo} retorno None')
+            self._pausa(0.5)
 
         if nombre:
             logger.warning(f'[print_ticket #{pedido.id}] todo enviado a: {nombre}')

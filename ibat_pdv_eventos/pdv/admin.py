@@ -16,7 +16,8 @@ class PuntoVentaAdmin(admin.ModelAdmin):
 
 @admin.register(Categoria)
 class CategoriaAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'evento']
+    list_display = ['nombre', 'evento', 'comanda_sufijo', 'comanda_etiqueta']
+    list_editable = ['comanda_sufijo', 'comanda_etiqueta']
 
 
 @admin.register(Producto)

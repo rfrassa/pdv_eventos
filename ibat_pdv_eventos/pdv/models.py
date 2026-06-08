@@ -1,5 +1,13 @@
 from django.db import models
 
+# TODO(post-peña-2026): refactorizar modelo de productos.
+# Hoy Producto tiene FK directo a Evento, lo que obliga a duplicar registros
+# cuando el mismo producto aparece en varios eventos. Los productos de Peña 2026
+# actualmente apuntan a categorías del evento "Locro" como workaround.
+# Solución: tabla EventoProducto (evento, producto, precio, categoria, disponible)
+# con Producto independiente del evento. Impacto: models, migrations, serializers,
+# todas las queries filter(evento=...), y el frontend.
+
 
 class Evento(models.Model):
     nombre = models.CharField(max_length=200)
@@ -30,6 +38,16 @@ class PuntoVenta(models.Model):
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100)
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='categorias')
+    comanda_sufijo = models.CharField(
+        max_length=10, blank=True, default='',
+        verbose_name='Sufijo de comanda',
+        help_text='Ej: C, B, CH. Categorías con el mismo sufijo van en la misma comanda. Vacío = sin comanda.',
+    )
+    comanda_etiqueta = models.CharField(
+        max_length=50, blank=True, default='',
+        verbose_name='Etiqueta de comanda',
+        help_text='Texto en el encabezado de la comanda. Ej: COCINA, BEBIDAS.',
+    )
 
     class Meta:
         verbose_name = 'Categoría'
