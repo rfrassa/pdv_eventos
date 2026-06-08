@@ -151,8 +151,12 @@ async function init() {
 
         if (impData && impData.impresoras) {
             state.impresoras = impData.impresoras;
-            if (!state.printerName && state.impresoras.length > 0) {
-                state.printerName = state.impresoras[0];
+            const savedExists = state.impresoras.includes(state.printerName);
+            if (!state.printerName || !savedExists) {
+                if (!savedExists && state.printerName) {
+                    showNotification('Impresora anterior no disponible, seleccionando: ' + (state.impresoras[0] || 'ninguna'), 'warning');
+                }
+                state.printerName = state.impresoras[0] || '';
                 localStorage.setItem('pdv_printer', state.printerName);
             }
         }
