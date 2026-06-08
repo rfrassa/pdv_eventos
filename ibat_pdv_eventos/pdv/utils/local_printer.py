@@ -247,10 +247,7 @@ class LocalPrinterService:
                 if p.lower() == self.printer_name.lower():
                     self.printer_name = p
                     return True
-            for p in disponibles:
-                if self.printer_name.lower() in p.lower() or p.lower() in self.printer_name.lower():
-                    self.printer_name = p
-                    return True
+            logger.warning(f'[check_connectivity] impresora "{self.printer_name}" no encontrada. Disponibles: {disponibles}')
             return False
 
         import socket
@@ -287,10 +284,7 @@ class LocalPrinterService:
                     matched = p
                     break
             if not matched:
-                for p in disponibles:
-                    if (self.printer_name or '').lower() in p.lower() or p.lower() in (self.printer_name or '').lower():
-                        matched = p
-                        break
+                logger.error(f'[_print_escpos{etiqueta}] impresora "{self.printer_name}" no encontrada. Disponibles: {disponibles}')
 
             if matched:
                 self.printer_name = matched
