@@ -67,13 +67,14 @@ class TicketFormatter:
             segs.append(self._seg(f'--- {etiqueta} ---', 'center', negrita=True))
         return segs
 
-    def formatear_comanda(self, pedido, categoria_nombre, etiqueta, sufijo):
+    def formatear_comanda(self, pedido, categorias, etiqueta, sufijo):
+        # categorias: lista de nombres de categoría a incluir en esta comanda
         segs = self._encabezado(pedido, f"#{pedido.id}-{sufijo}", etiqueta)
         segs.append(self._sep('='))
 
         items = []
         for linea in pedido.lineas.all():
-            if linea.producto.categoria.nombre != categoria_nombre:
+            if linea.producto.categoria.nombre not in categorias:
                 continue
             nombre = f"{linea.cantidad}x {linea.producto.nombre}"
             for txt in self._wrap(nombre):
