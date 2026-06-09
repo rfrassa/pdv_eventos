@@ -183,7 +183,7 @@ def test_print(request):
         buf.set(align='center')
         buf.text('=== TEST DE IMPRESION ===\n')
         buf.text(f'IP: {ip}:{puerto}\n')
-        buf.text('IBAT San José\n')
+        buf.text('Colaborando con el IBAT\n')
         buf.text('Peña IBAT 2026\n\n')
         buf.set(align='left')
         buf.text('Si ves esto la impresora\n')

@@ -56,7 +56,7 @@ class TicketFormatter:
         evento = pedido.punto_venta.evento
         segs = [
             self._seg('CENTRO DE ESTUDIANTES', 'center', negrita=True, doble_alto=True),
-            self._seg('IBAT San Jose', 'center', negrita=True),
+            self._seg('Colaborando con el IBAT', 'center', negrita=True),
             self._seg(''),
             self._seg(evento.nombre, 'center', negrita=True, doble_alto=True),
             self._seg(''),
@@ -152,7 +152,7 @@ class TicketFormatter:
 
         segs.append(self._sep('='))
         segs.append(self._seg(''))
-        segs.append(self._seg('Gracias por su compra', 'center'))
+        segs.append(self._seg('Gracias por su colaboración', 'center'))
         segs.append(self._seg('created by RaizDigital', 'center'))
         segs.append(self._seg(''))
         return segs
