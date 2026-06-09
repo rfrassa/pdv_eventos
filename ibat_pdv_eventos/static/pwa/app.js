@@ -999,7 +999,7 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
             </head>
             <body>
                 <div class="header">CENTRO DE ESTUDIANTES</div>
-                <div class="subheader">IBAT San José</div>
+                <div class="subheader">Colaborando con el IBAT</div>
                 <div class="center" style="font-size:18px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
                 ${etiquetaHtml}
                 <div class="info">
@@ -1066,7 +1066,7 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
         </head>
         <body>
             <div class="header">CENTRO DE ESTUDIANTES</div>
-            <div class="subheader">IBAT San José</div>
+            <div class="subheader">Colaborando con el IBAT</div>
             <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
             ${etiquetaHtml}
             <div class="info">
@@ -1085,7 +1085,7 @@ function buildTicketHtml(pedido, categoriaNombre, etiqueta, sufijo, simple) {
                 <tr><td class="sep" colspan="2"></td></tr>
             </table>
             <br>
-            <div class="footer">Gracias por su compra</div>
+            <div class="footer">Gracias por su colaboración</div>
             <div class="brand">created by RaízDigital®</div>
         </body>
         </html>
@@ -1133,7 +1133,7 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
         </head>
         <body>
             <div class="header">CENTRO DE ESTUDIANTES</div>
-            <div class="subheader">IBAT San José</div>
+            <div class="subheader">Colaborando con el IBAT</div>
             <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
             <div class="center" style="font-size:14px;font-weight:bold;margin:4px 0">--- ${etiqueta} ---</div>
             <div class="info">

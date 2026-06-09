@@ -35,6 +35,12 @@ def formatear_precio(precio):
     return "$ " + f"{entero:,}".replace(",", ".")
 
 def ordenar_productos(cat_nombre, productos):
+    if cat_nombre == 'Comidas':
+        def clave(p):
+            # Empanadas primero (por precio), resto después (por precio)
+            es_empanada = 'empanada' in p.nombre.lower()
+            return (0 if es_empanada else 1, int(p.precio))
+        return sorted(productos, key=clave)
     if cat_nombre != 'Bebidas':
         return productos
     def clave(p):
@@ -74,7 +80,7 @@ print("Paso 2/5: Cargando productos disponibles...")
 # Agrupa por nombre de categoría directamente desde productos del evento.
 # Esto funciona aunque las categorías estén asociadas a otro evento en la BD.
 agrupado = defaultdict(list)
-for p in Producto.objects.filter(evento=evento, disponible=True).order_by('categoria__nombre', 'nombre'):
+for p in Producto.objects.filter(evento=evento, disponible=True).order_by('categoria__nombre', 'precio', 'nombre'):
     agrupado[p.categoria.nombre].append(p)
 grupos = sorted(agrupado.items())
 
