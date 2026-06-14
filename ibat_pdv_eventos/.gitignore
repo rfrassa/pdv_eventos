@@ -12,6 +12,7 @@ ibat_pdv_env/
 # Secrets
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.cert
@@ -51,3 +52,17 @@ media/
 
 # Windows helpers
 *.bat
+
+# Archivos generados por el sistema (output de scripts)
+precios_site/index.html
+precios_site/qr.png
+reporte_*.html
+reporte_*.xlsx
+*.pdf
+print_test.txt
+test_print.txt
+temp_*.json
+temp_*.txt
+
+# Tokens y secretos del print agent
+*.token

@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Secrets & tokens
+.env
+.env.*
+*.token
+*.key
+*.pem
+
+# Base de datos (NUNCA va a git — contiene datos de clientes y transacciones)
+*.sqlite3
+*.sqlite
+*.db
+
+# Archivos generados por scripts
+reporte_*.html
+reporte_*.xlsx
+precios_*.html
+*.pdf
+
+# Backups y zips de operación
+backups/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Temporales de desarrollo
+tmp_*.py
+test_*.html
+viewport_*.png
+kiosk_*.png

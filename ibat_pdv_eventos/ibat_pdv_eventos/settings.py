@@ -31,9 +31,9 @@ ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:8000',
     'http://127.0.0.1:8000',
-    'http://192.168.0.52:8000',
 ]
 
+# Definir PDV_SERVER_IP en .env con la IP del servidor en la red local (ej: 192.168.0.10)
 PDV_SERVER_IP = os.getenv('PDV_SERVER_IP', '').strip()
 if PDV_SERVER_IP:
     CSRF_TRUSTED_ORIGINS.extend([
