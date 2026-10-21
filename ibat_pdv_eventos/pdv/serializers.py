@@ -100,9 +100,11 @@ class PagoSerializer(serializers.ModelSerializer):
 
 
 class PuntoVentaSerializer(serializers.ModelSerializer):
+    evento_nombre = serializers.CharField(source='evento.nombre', read_only=True)
+
     class Meta:
         model = PuntoVenta
-        fields = ['id', 'nombre', 'impresora_ip']
+        fields = ['id', 'nombre', 'impresora_ip', 'evento_nombre']
 
 
 class PedidoListSerializer(serializers.ModelSerializer):
