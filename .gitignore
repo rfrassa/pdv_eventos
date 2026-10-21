@@ -44,3 +44,4 @@ kiosk_*.png
 
 # Backups locales (pueden contener secretos)
 *.bak
+logs/

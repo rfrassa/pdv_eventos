@@ -146,3 +146,37 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [],
 }
+
+
+# Logging: consola + archivo rotativo (5 MB x 5 respaldos) para no perder errores al cerrar la ventana.
+LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'estandar': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'consola': {'class': 'logging.StreamHandler', 'formatter': 'estandar'},
+        'archivo': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'pdv_servidor.log',
+            'maxBytes': 5 * 1024 * 1024,
+            'backupCount': 5,
+            'encoding': 'utf-8',
+            'formatter': 'estandar',
+        },
+    },
+    'root': {'handlers': ['consola', 'archivo'], 'level': 'WARNING'},
+    'loggers': {
+        'django': {'level': 'WARNING'},
+        # 5xx con traceback; los 4xx (404) no se registran en este nivel.
+        'django.request': {'level': 'ERROR'},
+        # Avisa si se acumulan pedidos en la cola (waitress.queue).
+        'waitress': {'level': 'WARNING'},
+        # Linea de arranque de run_server_local.py.
+        'pdv_servidor': {'handlers': ['consola', 'archivo'], 'level': 'INFO', 'propagate': False},
+    },
+}

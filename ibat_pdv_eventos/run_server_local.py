@@ -86,10 +86,16 @@ def main():
     print("============================================")
 
     try:
+        import logging
+        from django.conf import settings
         from django.core.wsgi import get_wsgi_application
         from waitress import serve
 
         application = get_wsgi_application()
+        logging.getLogger("pdv_servidor").info(
+            "Arranque: bind=%s puerto=%s threads=%s DEBUG=%s PID=%s",
+            args.host, selected_port, args.threads, settings.DEBUG, os.getpid(),
+        )
         serve(application, host=args.host, port=selected_port, threads=args.threads)
     except ModuleNotFoundError as exc:
         if exc.name == "waitress":
