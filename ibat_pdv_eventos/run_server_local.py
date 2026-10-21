@@ -1,6 +1,7 @@
 import argparse
 import os
 import socket
+import subprocess
 import sys
 
 
@@ -27,7 +28,12 @@ def is_valid_ipv4(value):
 
 def can_bind(host, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # En Windows SO_REUSEADDR deja bindear un puerto que otro proceso ya escucha
+    # (asi corrieron dos servidores en el 8080); SO_EXCLUSIVEADDRUSE lo impide.
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.bind((host, port))
         return True
@@ -37,19 +43,17 @@ def can_bind(host, port):
         sock.close()
 
 
-def pick_port(host, requested_port):
-    candidates = [requested_port, 8080, 8010, 8888, 9000]
-    seen = set()
-    ordered = []
-    for p in candidates:
-        if p not in seen:
-            seen.add(p)
-            ordered.append(p)
-
-    for port in ordered:
-        if can_bind(host, port):
-            return port, ordered
-    return None, ordered
+def find_listening_pid(port):
+    """PID que escucha en el puerto (via netstat), o None si no se pudo determinar."""
+    try:
+        out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in out.splitlines():
+        cols = line.split()
+        if len(cols) >= 5 and cols[3].upper() == "LISTENING" and cols[1].endswith(f":{port}"):
+            return cols[4]
+    return None
 
 
 def main():
@@ -66,14 +70,13 @@ def main():
         fixed_ip = discover_local_ip()
         os.environ["PDV_SERVER_IP"] = fixed_ip
 
-    selected_port, tried_ports = pick_port(args.host, args.port)
-    if selected_port is None:
-        print("[ERROR] No se encontro un puerto disponible.")
-        print(f"        Puertos probados: {', '.join(str(p) for p in tried_ports)}")
+    # El puerto no cambia solo: las cajas apuntan a uno fijo y un cambio silencioso las deja sin servidor.
+    selected_port = args.port
+    if not can_bind(args.host, selected_port):
+        pid = find_listening_pid(selected_port)
+        quien = f"por el PID {pid}" if pid else "por otro proceso (PID no determinado)"
+        print(f"[ERROR] El puerto {selected_port} esta ocupado {quien} - cerra ese proceso y volve a iniciar.")
         sys.exit(1)
-
-    if selected_port != args.port:
-        print(f"[WARN] Puerto {args.port} no disponible. Se usara {selected_port}.")
 
     print("============================================")
     print(" PDV Eventos - Servidor local")
