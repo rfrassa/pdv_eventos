@@ -1172,9 +1172,8 @@ async function imprimirTicketNavegador(id) {
         const pedido = await apiFetch('/api/pedidos/' + id + '/');
         const categorias = new Set(pedido.lineas.map(l => l.categoria_nombre));
 
+        // Solo comandas, sin ticket de cliente. buildTicketHtml se conserva para otros eventos.
         const htmlParts = [];
-        const htmlCompleto = buildTicketHtml(pedido);
-        if (htmlCompleto) htmlParts.push(htmlCompleto);
 
         if (categorias.has('Comidas')) {
             const htmlComidas = buildComandaHtml(pedido, 'Comidas', 'COMIDAS', 'C');
