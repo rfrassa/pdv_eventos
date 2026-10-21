@@ -1097,9 +1097,6 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
     const fecha = new Date(pedido.creado).toLocaleString();
     const ticketId = '#' + pedido.id + '-' + sufijo;
 
-    const qrData = encodeURIComponent('Pedido ' + ticketId + ' - IBAT 2026');
-    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + qrData;
-
     let lineasHtml = '';
     const target = (categoriaNombre || '').toString().toLowerCase().trim();
     pedido.lineas.forEach(l => {
@@ -1136,14 +1133,10 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
             <div class="subheader">Colaborando con el IBAT</div>
             <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
             <div class="center" style="font-size:14px;font-weight:bold;margin:4px 0">--- ${etiqueta} ---</div>
-            <div class="info">
-                PDV: ${pdv} | ${ticketId}<br>
-                ${fecha}
-            </div>
+            <div style="text-align:center;font-size:20px;font-weight:bold;margin:4px 0">${pdv}</div>
+            <div style="text-align:center;font-size:20px;font-weight:bold;margin:0 0 4px">Pedido ${ticketId}</div>
+            <div class="info" style="text-align:center">${fecha}</div>
             ${lineasHtml}
-            <div style="text-align:center;margin-top:8px">
-                <img src="${qrUrl}" width="80" height="80" alt="QR">
-            </div>
         </body>
         </html>
     `;
