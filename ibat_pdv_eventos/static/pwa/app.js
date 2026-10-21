@@ -1096,6 +1096,8 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
     const pdv = pedido.punto_venta_nombre;
     const fecha = new Date(pedido.creado).toLocaleString();
     const ticketId = '#' + pedido.id + '-' + sufijo;
+    // Si el backend no manda evento_nombre, no se muestra nada (sin texto fijo).
+    const eventoNombre = (state.pdvActual && state.pdvActual.evento_nombre) || '';
 
     let lineasHtml = '';
     const target = (categoriaNombre || '').toString().toLowerCase().trim();
@@ -1131,7 +1133,7 @@ function buildComandaHtml(pedido, categoriaNombre, etiqueta, sufijo) {
         <body>
             <div class="header">CENTRO DE ESTUDIANTES</div>
             <div class="subheader">Colaborando con el IBAT</div>
-            <div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">Peña IBAT 2026</div>
+            ${eventoNombre ? `<div class="center" style="font-size:16px;font-weight:bold;margin:4px 0 6px">${eventoNombre}</div>` : ''}
             <div class="center" style="font-size:14px;font-weight:bold;margin:4px 0">--- ${etiqueta} ---</div>
             <div style="text-align:center;font-size:20px;font-weight:bold;margin:4px 0">${pdv}</div>
             <div style="text-align:center;font-size:20px;font-weight:bold;margin:0 0 4px">Pedido ${ticketId}</div>
