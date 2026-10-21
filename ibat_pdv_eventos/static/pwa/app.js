@@ -56,6 +56,17 @@ function getCsrfToken() {
     return match ? match[1] : '';
 }
 
+// Arma el mensaje desde el cuerpo de error: {error}, {detail} o errores de campo de DRF ({campo: [msgs]}).
+function mensajeDeError(err) {
+    if (err && (err.error || err.detail)) return err.error || err.detail;
+    if (err && typeof err === 'object') {
+        const partes = Object.entries(err).map(([campo, msgs]) =>
+            campo + ': ' + (Array.isArray(msgs) ? msgs.join(', ') : msgs));
+        if (partes.length) return partes.join(' | ');
+    }
+    return 'Error del servidor';
+}
+
 async function apiFetch(url, options = {}) {
     const config = {
         headers: {
@@ -64,10 +75,16 @@ async function apiFetch(url, options = {}) {
         },
         ...options,
     };
-    const res = await fetch(API_BASE + url, config);
+    let res;
+    try {
+        res = await fetch(API_BASE + url, config);
+    } catch (e) {
+        // Unica falla real de red: el servidor no respondio.
+        throw new Error('Error de conexión');
+    }
     if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || err.detail || 'Error de conexión');
+        const err = await res.json().catch(() => ({ error: 'Error del servidor (' + res.status + ')' }));
+        throw new Error(mensajeDeError(err));
     }
     if (res.status === 204 || res.headers.get('content-length') === '0') return null;
     return res.json();
@@ -183,15 +200,12 @@ async function init() {
         });
         state.categorias = Array.from(cats.values());
 
-        if (pdvs && pdvs.length > 0) {
-            state.pdvs = pdvs;
-        } else {
-            state.pdvs = [
-                { id: 1, nombre: 'PDV 1 - Entrada', impresora_ip: '192.168.0.58' },
-                { id: 2, nombre: 'PDV 2 - Principal', impresora_ip: '192.168.0.58' },
-                { id: 3, nombre: 'PDV 3 - VIP', impresora_ip: '192.168.0.58' },
-            ];
+        if (!pdvs || pdvs.length === 0) {
+            // Sin ids de respaldo: vender con un PV inventado deja pedidos en cajas que no existen.
+            bloquearVenta('No hay puntos de venta para el evento activo — revisar el admin');
+            return;
         }
+        state.pdvs = pdvs;
         // Cada caja abre con su PV via ?pdv=<id>. Sin parametro: primer PV (comportamiento anterior).
         const pdvParam = new URLSearchParams(window.location.search).get('pdv');
         state.pdvActual = state.pdvs[0];
