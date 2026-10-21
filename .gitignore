@@ -41,3 +41,6 @@ tmp_*.py
 test_*.html
 viewport_*.png
 kiosk_*.png
+
+# Backups locales (pueden contener secretos)
+*.bak
