@@ -210,18 +210,6 @@ async function init() {
         document.getElementById('btn-pdv-select').innerHTML = state.pdvActual.nombre + ' <span class="badge-pendientes" id="badge-pendientes">0</span>';
         document.getElementById('btn-guardar-label').textContent = 'GUARDAR';
 
-        // Inicializar estado del boton imprimir al confirmar
-        const printBtn = document.getElementById('btn-print-after');
-        if (printBtn) {
-            if (state.print_after_confirm) {
-                printBtn.classList.add('active');
-                printBtn.textContent = 'Imprimir al confirmar (ON)';
-            } else {
-                printBtn.classList.remove('active');
-                printBtn.textContent = 'Imprimir Web';
-            }
-        }
-
         renderCategorias();
         renderProductos();
         renderTicket();
