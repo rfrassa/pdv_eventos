@@ -140,6 +140,17 @@ function renderAgentStatus() {
     setInterval(pingAgent, 8000);
 }
 
+// Error persistente que bloquea la venta (no se puede cerrar; hay que corregir y recargar).
+function bloquearVenta(msg) {
+    const el = document.createElement('div');
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#b71c1c;color:#fff;' +
+        'display:flex;align-items:center;justify-content:center;text-align:center;' +
+        'padding:24px;font:bold 28px Arial,sans-serif';
+    el.textContent = msg;
+    document.body.appendChild(el);
+}
+
 // --- INIT ---
 async function init() {
     try {
@@ -181,7 +192,18 @@ async function init() {
                 { id: 3, nombre: 'PDV 3 - VIP', impresora_ip: '192.168.0.58' },
             ];
         }
+        // Cada caja abre con su PV via ?pdv=<id>. Sin parametro: primer PV (comportamiento anterior).
+        const pdvParam = new URLSearchParams(window.location.search).get('pdv');
         state.pdvActual = state.pdvs[0];
+        if (pdvParam !== null) {
+            const pdvElegido = state.pdvs.find(p => String(p.id) === pdvParam);
+            if (!pdvElegido) {
+                // Nunca vender en otra caja por error: bloquear con error persistente.
+                bloquearVenta('El punto de venta ' + pdvParam + ' no existe para el evento activo — revisar el acceso directo');
+                return;
+            }
+            state.pdvActual = pdvElegido;
+        }
         state.evento = { nombre: 'PDV Eventos' };
 
         document.getElementById('evento-nombre').textContent = state.evento.nombre || 'PDV Eventos';
