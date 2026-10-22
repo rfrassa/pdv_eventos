@@ -52,6 +52,8 @@ media/
 
 # Windows helpers
 *.bat
+!iniciar_servidor_eth_fijo.bat
+!iniciar_servidor_dev.bat
 
 # Archivos generados por el sistema (output de scripts)
 precios_site/index.html
