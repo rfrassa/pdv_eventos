@@ -97,7 +97,7 @@ def pedidos_abiertos(request):
     punto_venta_id = request.query_params.get('punto_venta_id')
     pedidos = Pedido.objects.filter(
         cerrado=False,
-        punto_venta__evento=evento_activo,
+        evento=evento_activo,
     )
     if punto_venta_id:
         pedidos = pedidos.filter(punto_venta_id=punto_venta_id)
@@ -113,7 +113,7 @@ def pedidos_historial(request):
     pagina = int(request.query_params.get('pagina', 1))
     limite = int(request.query_params.get('limite', 50))
 
-    pedidos = Pedido.objects.filter(punto_venta__evento=evento_activo)
+    pedidos = Pedido.objects.filter(evento=evento_activo)
     if punto_venta_id:
         pedidos = pedidos.filter(punto_venta_id=punto_venta_id)
     pedidos = pedidos.order_by('-creado')
@@ -203,9 +203,9 @@ def test_print(request):
 def resumen_ventas(evento, punto_venta_id=None):
     """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
     compartida por cierre_caja y resumen_ventas_view."""
-    filtro_pedido = {'punto_venta__evento': evento, 'cerrado': True}
-    filtro_pago   = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
-    filtro_linea  = {'pedido__punto_venta__evento': evento, 'pedido__cerrado': True}
+    filtro_pedido = {'evento': evento, 'cerrado': True}
+    filtro_pago   = {'pedido__evento': evento, 'pedido__cerrado': True}
+    filtro_linea  = {'pedido__evento': evento, 'pedido__cerrado': True}
 
     if punto_venta_id:
         filtro_pedido['punto_venta_id'] = punto_venta_id
@@ -267,7 +267,7 @@ def cierre_caja(request):
     resumen = resumen_ventas(evento, punto_venta_id)
 
     # Lista detallada de pedidos: exclusiva del cierre, no del tablero
-    filtro = {'punto_venta__evento': evento, 'cerrado': True}
+    filtro = {'evento': evento, 'cerrado': True}
     if punto_venta_id:
         filtro['punto_venta_id'] = punto_venta_id
     resumen['pedidos'] = [

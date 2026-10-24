@@ -54,7 +54,7 @@ def get_evento(evento_id=None):
 
 def extraer_datos(evento):
     pedidos = Pedido.objects.filter(
-        punto_venta__evento=evento, cerrado=True
+        evento=evento, cerrado=True
     ).select_related('punto_venta').prefetch_related('lineas__producto__categoria', 'pagos')
 
     total_general = Decimal('0')

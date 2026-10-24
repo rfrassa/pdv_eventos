@@ -53,7 +53,7 @@ class TicketFormatter:
         return lineas
 
     def _encabezado(self, pedido, ticket_id, etiqueta=None):
-        evento = pedido.punto_venta.evento
+        evento = pedido.evento
         segs = [
             self._seg('CENTRO DE ESTUDIANTES', 'center', negrita=True, doble_alto=True),
             self._seg('Colaborando con el IBAT', 'center', negrita=True),
