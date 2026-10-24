@@ -76,12 +76,29 @@ class ProductoAdmin(admin.ModelAdmin):
     list_filter = ['categoria', 'evento', 'disponible']
 
 
-class LineaPedidoInline(admin.TabularInline):
+class SoloEventoAbiertoInline:
+    """Los inlines de un pedido de un evento cerrado quedan de solo lectura.
+    `obj` es el pedido padre."""
+
+    def _bloqueado(self, obj):
+        return obj is not None and obj.evento.cerrado
+
+    def has_add_permission(self, request, obj=None):
+        return not self._bloqueado(obj) and super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        return not self._bloqueado(obj) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return not self._bloqueado(obj) and super().has_delete_permission(request, obj)
+
+
+class LineaPedidoInline(SoloEventoAbiertoInline, admin.TabularInline):
     model = LineaPedido
     extra = 0
 
 
-class PagoInline(admin.TabularInline):
+class PagoInline(SoloEventoAbiertoInline, admin.TabularInline):
     model = Pago
     extra = 0
 
@@ -91,3 +108,22 @@ class PedidoAdmin(admin.ModelAdmin):
     list_display = ['id', 'evento', 'punto_venta', 'creado', 'cerrado', 'total_final']
     list_filter = ['evento', 'cerrado', 'punto_venta']
     inlines = [LineaPedidoInline, PagoInline]
+
+    def has_change_permission(self, request, obj=None):
+        # Pedido de un evento cerrado: solo lectura (el admin igual lo deja ver).
+        if obj is not None and obj.evento.cerrado:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        # Con obj=None se habilita la lista y la acción "eliminar seleccionados"; esa acción
+        # vuelve a consultar este método por cada pedido, así que un solo pedido bloqueado
+        # frena todo el lote. Un pedido cobrado es dinero registrado: no se borra.
+        if obj is not None and (obj.cerrado or obj.evento.cerrado):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'evento':
+            kwargs['queryset'] = Evento.objects.filter(cerrado_en__isnull=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)

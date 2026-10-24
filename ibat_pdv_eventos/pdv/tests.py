@@ -270,3 +270,86 @@ class CierreDeEventoTests(DatosVentas):
         self.assertIsNotNone(data[self.expo.id]['cerrado_en'])
         self.assertIsNone(data[self.junio.id]['cerrado_en'])
         self.assertEqual(self.api.get('/api/resumen-ventas/', {'evento': self.expo.id}).json()['total_general'], 3000)
+
+
+class PedidoAdminTests(DatosVentas):
+    """Admin de pedidos: un pedido cobrado o de un evento cerrado no se borra, y los
+    pedidos de un evento cerrado son de solo lectura (con sus inlines)."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        self.cobrado = self.pedido(self.expo, utc(2026, 10, 23, 0, 30))
+        self.abierto = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
+        self.abierto2 = self.pedido(self.expo, utc(2026, 10, 23, 0, 50), cerrado=False)
+        self.c = self.client_class()
+        self.c.force_login(get_user_model().objects.create_superuser('admin', 'a@a.com', 'x'))
+
+    def cerrar_expo(self):
+        Evento.objects.filter(id=self.expo.id).update(activo=False, cerrado_en=utc(2026, 10, 24, 0, 0))
+
+    def borrar_seleccionados(self, ids):
+        return self.c.post('/admin/pdv/pedido/', {
+            'action': 'delete_selected', '_selected_action': ids, 'post': 'yes'})
+
+    def existen(self, *pedidos):
+        return [Pedido.objects.filter(id=p.id).exists() for p in pedidos]
+
+    # --- borrar ---
+    def test_no_se_borra_un_pedido_cobrado(self):
+        url = f'/admin/pdv/pedido/{self.cobrado.id}/delete/'
+        self.assertEqual(self.c.get(url).status_code, 403)
+        self.assertEqual(self.c.post(url, {'post': 'yes'}).status_code, 403)
+        self.assertEqual(self.existen(self.cobrado), [True])
+
+    def test_si_se_borra_un_pedido_abierto_de_un_evento_abierto(self):
+        self.c.post(f'/admin/pdv/pedido/{self.abierto.id}/delete/', {'post': 'yes'})
+        self.assertEqual(self.existen(self.abierto), [False])
+
+    def test_eliminar_seleccionados_solo_abiertos_funciona(self):
+        self.borrar_seleccionados([self.abierto.id, self.abierto2.id])
+        self.assertEqual(self.existen(self.abierto, self.abierto2), [False, False])
+
+    def test_eliminar_seleccionados_con_un_cobrado_no_borra_nada(self):
+        self.borrar_seleccionados([self.abierto.id, self.cobrado.id])
+        self.assertEqual(self.existen(self.abierto, self.cobrado), [True, True])
+
+    def test_no_se_borra_nada_de_un_evento_cerrado(self):
+        self.cerrar_expo()
+        url = f'/admin/pdv/pedido/{self.abierto.id}/delete/'
+        self.assertEqual(self.c.post(url, {'post': 'yes'}).status_code, 403)
+        self.borrar_seleccionados([self.abierto.id, self.abierto2.id])
+        self.assertEqual(self.existen(self.abierto, self.abierto2, self.cobrado), [True, True, True])
+
+    def test_borrar_la_caja_no_arrastra_pedidos_protegidos(self):
+        self.c.post(f'/admin/pdv/puntoventa/{self.caja.id}/delete/', {'post': 'yes'})
+        self.assertEqual(self.existen(self.cobrado, self.abierto), [True, True])
+        self.assertTrue(PuntoVenta.objects.filter(id=self.caja.id).exists())
+
+    # --- solo lectura ---
+    def test_pedido_de_evento_cerrado_es_de_solo_lectura(self):
+        self.cerrar_expo()
+        url = f'/admin/pdv/pedido/{self.abierto.id}/change/'
+        resp = self.c.get(url)
+        self.assertEqual(resp.status_code, 200)               # se puede ver
+        self.assertContains(resp, 'Ver Pedido')
+        self.assertNotContains(resp, 'name="lineas-0-cantidad"')  # sin campos editables en el inline
+        self.assertNotContains(resp, 'name="total_final"')
+        self.assertNotContains(resp, 'name="_save"')              # ni botón de guardar
+        self.assertEqual(self.c.post(url, {'punto_venta': self.caja.id, 'evento': self.expo.id,
+                                           'subtotal': '1', 'descuento_porcentaje': '0', 'total_impuestos': '0',
+                                           'total_final': '1', 'veces_impreso': '0'}).status_code, 403)
+        self.abierto.refresh_from_db()
+        self.assertEqual(self.abierto.total_final, 1000)
+
+    def test_pedido_de_evento_abierto_sigue_editable_con_sus_inlines(self):
+        resp = self.c.get(f'/admin/pdv/pedido/{self.abierto.id}/change/')
+        self.assertContains(resp, 'name="lineas-0-cantidad"')
+        self.assertContains(resp, 'name="total_final"')
+        self.assertContains(resp, 'name="_save"')
+        self.assertContains(resp, 'pagos-TOTAL_FORMS')
+
+    def test_no_se_puede_crear_un_pedido_en_un_evento_cerrado(self):
+        self.cerrar_expo()
+        resp = self.c.get('/admin/pdv/pedido/add/')
+        self.assertNotContains(resp, 'Expo 2026')
+        self.assertContains(resp, 'Peña 2026')
