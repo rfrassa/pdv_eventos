@@ -1,0 +1,45 @@
+{% extends "admin/base_site.html" %}
+{% load l10n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Inicio</a> &rsaquo;
+  <a href="{% url 'admin:pdv_evento_changelist' %}">Eventos</a> &rsaquo; Cerrar evento
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Cerrar "{{ evento.nombre }}"</h1>
+
+<p>
+  Total del evento: <strong>${{ resumen.total_general|floatformat:"2g" }}</strong>
+  en <strong>{{ resumen.total_pedidos|localize }}</strong> pedidos cobrados
+  (ticket promedio ${{ resumen.ticket_promedio|floatformat:"2g" }}, {{ resumen.unidades_total|localize }} unidades).
+</p>
+
+<ul>
+  <li>Desde este momento <strong>ninguna caja podrá cargar pedidos</strong> para este evento.</li>
+  <li>No se borra ni se modifica ningún pedido. Los pedidos del evento dejan de poder editarse o borrarse.</li>
+  <li>Para reabrirlo hay que editar el evento y vaciar &laquo;Cerrado en&raquo;.</li>
+</ul>
+
+{% if abiertos %}
+<p class="errornote">
+  Hay {{ abiertos }} pedido{{ abiertos|pluralize }} sin cobrar. No cuenta{{ abiertos|pluralize:",n" }} en el total y no se podrá{{ abiertos|pluralize:",n" }} cobrar después de cerrar.
+  Conviene cobrarlos o borrarlos antes.
+</p>
+{% endif %}
+{% if not hay_otros_activos %}
+<p class="errornote">No queda ningún otro evento activo: las cajas no van a poder vender hasta que se active uno.</p>
+{% endif %}
+
+<form method="post" action="{% url 'admin:pdv_evento_changelist' %}">
+  {% csrf_token %}
+  <input type="hidden" name="{{ action_checkbox_name }}" value="{{ evento.pk|unlocalize }}">
+  <input type="hidden" name="action" value="cerrar_evento">
+  <input type="hidden" name="confirmar" value="si">
+  <input type="hidden" name="post" value="yes">
+  <input type="submit" class="default" value="Sí, cerrar el evento">
+  <a href="{% url 'admin:pdv_evento_changelist' %}" class="button cancel-link">No, volver</a>
+</form>
+{% endblock %}
