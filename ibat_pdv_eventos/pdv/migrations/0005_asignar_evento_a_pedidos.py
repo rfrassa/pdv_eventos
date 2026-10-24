@@ -2,9 +2,11 @@ from datetime import datetime, timezone
 
 from django.db import migrations
 
-# TODO(deuda): rangos y ids fijos, válidos solo para la base de producción de
-# octubre 2026 (tras borrar las pruebas, fase 1a). En una base sin pedidos no
-# hace nada. Si hay pedidos fuera de estos rangos, falla a propósito.
+# Rangos e ids fijos a propósito: una migración de datos describe un hecho
+# histórico (qué pedidos de la base de octubre 2026, tras borrar las pruebas en
+# la fase 1a, pertenecen a cada evento), no una regla que deba generalizarse.
+# En una base sin pedidos no hace nada. Si hay pedidos fuera de estos rangos,
+# falla a propósito.
 JUNIO_FIN = datetime(2026, 7, 1, tzinfo=timezone.utc)
 EXPO_INICIO = datetime(2026, 10, 22, 22, 0, tzinfo=timezone.utc)
 EVENTO_PENA_JUNIO = 2
