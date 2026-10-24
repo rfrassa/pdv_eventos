@@ -2,9 +2,11 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 # TODO(post-peña-2026): refactorizar modelo de productos.
-# Hoy Producto tiene FK directo a Evento, lo que obliga a duplicar registros
-# cuando el mismo producto aparece en varios eventos. Los productos de Peña 2026
-# actualmente apuntan a categorías del evento "Locro" como workaround.
+# Hoy Producto (y Categoria) tienen FK directo a Evento, lo que obliga a duplicar
+# registros cuando el mismo producto aparece en varios eventos, o a reasignarle el
+# evento (pasó con "Agua mineral 500 ml" y "Agua Saborizada 500cc", de Peña 2026 a
+# la Expo). Las ventas no dependen de esto: se filtran por pedido.evento, nunca por
+# producto.evento.
 # Solución: tabla EventoProducto (evento, producto, precio, categoria, disponible)
 # con Producto independiente del evento. Impacto: models, migrations, serializers,
 # todas las queries filter(evento=...), y el frontend.
