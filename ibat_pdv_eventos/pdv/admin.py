@@ -39,6 +39,6 @@ class PagoInline(admin.TabularInline):
 
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
-    list_display = ['id', 'punto_venta', 'creado', 'cerrado', 'total_final']
-    list_filter = ['cerrado', 'punto_venta']
+    list_display = ['id', 'evento', 'punto_venta', 'creado', 'cerrado', 'total_final']
+    list_filter = ['evento', 'cerrado', 'punto_venta']
     inlines = [LineaPedidoInline, PagoInline]
