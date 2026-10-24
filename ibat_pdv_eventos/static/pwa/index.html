@@ -177,9 +177,18 @@
             <span id="dashboard-status" class="dashboard-status-chip"></span>
         </div>
         <div class="dashboard-pdv-bar">
+            <select id="dashboard-evento-select" class="dashboard-pdv-select" onchange="cambiarEventoDashboard()"></select>
+            <div class="dashboard-fechas">
+                <label>Desde <input type="date" id="dashboard-desde" onchange="cambiarFiltroDashboard()"></label>
+                <label>Hasta <input type="date" id="dashboard-hasta" onchange="cambiarFiltroDashboard()"></label>
+            </div>
             <select id="dashboard-pdv-select" class="dashboard-pdv-select" onchange="cambiarFiltroDashboard()">
                 <option value="">Todas las cajas</option>
             </select>
+            <div class="dashboard-acciones">
+                <button type="button" onclick="exportarDashboard('xlsx')">Exportar Excel</button>
+                <button type="button" onclick="exportarDashboard('imprimir')">Imprimir / PDF</button>
+            </div>
         </div>
         <div class="orders-list" id="dashboard-body">
             <div class="empty-state">Cargando...</div>

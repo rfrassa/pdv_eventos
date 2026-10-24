@@ -993,6 +993,49 @@ button {
     cursor: pointer;
 }
 
+.dashboard-pdv-bar > * + * {
+    margin-top: 8px;
+}
+
+.dashboard-fechas {
+    display: flex;
+    gap: 8px;
+}
+
+.dashboard-fechas label {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--text);
+}
+
+.dashboard-fechas input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.dashboard-acciones {
+    display: flex;
+    gap: 8px;
+}
+
+.dashboard-acciones button {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
 .dashboard-status-chip {
     font-size: 0.72rem;
     color: var(--success);

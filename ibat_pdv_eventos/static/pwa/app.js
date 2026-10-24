@@ -1247,19 +1247,61 @@ function toggleDashboard() {
         sel.appendChild(opt);
     });
     overlay.classList.add('open');
+    cargarEventosDashboard().then(() => {
+        if (!overlay.classList.contains('open')) return;  // se cerró mientras cargaba
+        cargarDashboard();
+        _dashboardInterval = setInterval(cargarDashboard, 7000);
+    });
+}
+
+async function cargarEventosDashboard() {
+    const sel = document.getElementById('dashboard-evento-select');
+    const previo = sel.value;
+    try {
+        const eventos = await apiFetch('/api/eventos/');
+        sel.innerHTML = eventos.map(e =>
+            `<option value="${e.id}">${e.nombre}${e.activo ? ' (activo)' : ''}</option>`
+        ).join('') + '<option value="todos">Todos los eventos</option>';
+        const defecto = eventos.find(e => e.por_defecto);
+        sel.value = previo || (defecto ? String(defecto.id) : 'todos');
+    } catch (e) {
+        showNotification('No se pudieron cargar los eventos: ' + e.message, 'error');
+    }
+}
+
+function cambiarEventoDashboard() {
+    // Las cajas listadas son las del evento activo; al cambiar de evento se vuelve a "todas".
+    document.getElementById('dashboard-pdv-select').value = '';
     cargarDashboard();
-    _dashboardInterval = setInterval(cargarDashboard, 7000);
 }
 
 function cambiarFiltroDashboard() {
     cargarDashboard();
 }
 
+function paramsDashboard() {
+    const params = new URLSearchParams();
+    const campos = [
+        ['evento', 'dashboard-evento-select'],
+        ['desde', 'dashboard-desde'],
+        ['hasta', 'dashboard-hasta'],
+        ['punto_venta_id', 'dashboard-pdv-select'],
+    ];
+    campos.forEach(([nombre, id]) => {
+        const valor = document.getElementById(id).value;
+        if (valor) params.set(nombre, valor);
+    });
+    return params.toString();
+}
+
+function exportarDashboard(formato) {
+    window.open(API_BASE + '/api/resumen-ventas/' + formato + '/?' + paramsDashboard(), '_blank');
+}
+
 async function cargarDashboard() {
     const statusEl = document.getElementById('dashboard-status');
     if (statusEl) statusEl.textContent = 'actualizando…';
-    const pdvId = document.getElementById('dashboard-pdv-select').value;
-    const url = '/api/resumen-ventas/' + (pdvId ? '?punto_venta_id=' + pdvId : '');
+    const url = '/api/resumen-ventas/?' + paramsDashboard();
     try {
         const data = await apiFetch(url);
         renderDashboard(data);
@@ -1291,19 +1333,42 @@ function renderDashboard(data) {
     ).join('');
     if (!productosHtml) productosHtml = '<div class="dashboard-empty">Sin ventas registradas</div>';
 
+    const cajasHtml = (data.por_caja || []).map(c =>
+        `<div class="dashboard-row">
+            <span>${c.nombre} (${c.pedidos})</span>
+            <span class="dashboard-value">$${parseFloat(c.total).toFixed(2)}</span>
+        </div>`
+    ).join('');
+
+    const franjasHtml = (data.por_franja || []).map(f =>
+        `<div class="dashboard-row">
+            <span>${f.franja}</span>
+            <span class="dashboard-units">${f.pedidos} &middot; $${parseFloat(f.total).toFixed(2)}</span>
+        </div>`
+    ).join('');
+
     document.getElementById('dashboard-body').innerHTML = `
         <div class="dashboard-total-card">
             <div class="dashboard-total-label">TOTAL VENDIDO</div>
             <div class="dashboard-total-amount">${totalFmt}</div>
             <div class="dashboard-total-sub">${ventas} venta${ventas !== 1 ? 's' : ''} cobrada${ventas !== 1 ? 's' : ''}</div>
+            <div class="dashboard-total-sub">Ticket promedio $${parseFloat(data.ticket_promedio).toFixed(2)} &middot; ${data.unidades_total} unidades</div>
         </div>
         <div class="dashboard-section">
             <div class="dashboard-section-title">Por m&eacute;todo de pago</div>
             ${metodosHtml}
         </div>
         <div class="dashboard-section">
+            <div class="dashboard-section-title">Por caja</div>
+            ${cajasHtml || '<div class="dashboard-empty">Sin ventas registradas</div>'}
+        </div>
+        <div class="dashboard-section">
             <div class="dashboard-section-title">Productos m&aacute;s vendidos</div>
             ${productosHtml}
+        </div>
+        <div class="dashboard-section">
+            <div class="dashboard-section-title">Ventas cada 15 minutos</div>
+            ${franjasHtml || '<div class="dashboard-empty">Sin ventas registradas</div>'}
         </div>
     `;
 }
