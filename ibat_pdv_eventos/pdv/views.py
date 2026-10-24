@@ -1,12 +1,17 @@
 import os
 import threading
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from django.conf import settings
-from django.db.models import F, Sum
-from django.shortcuts import get_object_or_404
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
@@ -200,25 +205,49 @@ def test_print(request):
         return Response({'error': str(e), 'ok': False}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def resumen_ventas(evento, punto_venta_id=None):
-    """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
-    compartida por cierre_caja y resumen_ventas_view."""
-    filtro_pedido = {'evento': evento, 'cerrado': True}
-    filtro_pago   = {'pedido__evento': evento, 'pedido__cerrado': True}
-    filtro_linea  = {'pedido__evento': evento, 'pedido__cerrado': True}
+def _rango_utc(desde, hasta):
+    """Fechas (date, inclusive ambas, en hora de Argentina) -> (inicio, fin_exclusivo)
+    como datetimes con zona, que Django compara contra los UTC guardados."""
+    tz = timezone.get_default_timezone()
+    inicio = timezone.make_aware(datetime.combine(desde, time.min), tz) if desde else None
+    fin = timezone.make_aware(datetime.combine(hasta + timedelta(days=1), time.min), tz) if hasta else None
+    return inicio, fin
 
+
+def _filtros_cobrados(evento, punto_venta_id, desde, hasta, prefijo=''):
+    """Único lugar donde se define qué pedidos cuentan en un resumen. `prefijo`
+    ('pedido__') lo reutiliza para pagos y líneas."""
+    filtro = {prefijo + 'cerrado': True}
+    if evento is not None:
+        filtro[prefijo + 'evento'] = evento
     if punto_venta_id:
-        filtro_pedido['punto_venta_id'] = punto_venta_id
-        filtro_pago['pedido__punto_venta_id'] = punto_venta_id
-        filtro_linea['pedido__punto_venta_id'] = punto_venta_id
+        filtro[prefijo + 'punto_venta_id'] = punto_venta_id
+    inicio, fin = _rango_utc(desde, hasta)
+    if inicio:
+        filtro[prefijo + 'creado__gte'] = inicio
+    if fin:
+        filtro[prefijo + 'creado__lt'] = fin
+    return filtro
 
-    totales = Pedido.objects.filter(**filtro_pedido).aggregate(
+
+def resumen_ventas(evento, punto_venta_id=None, desde=None, hasta=None, con_pedidos=False):
+    """Agrega ventas cobradas (cerrado=True) usando el ORM. Fuente única de verdad
+    de la pantalla, el XLSX y la versión imprimible, y de cierre_caja.
+
+    evento=None => todos los eventos. desde/hasta: date en hora de Argentina,
+    inclusive ambas. con_pedidos agrega el detalle de pedidos (solo para exportar)."""
+    filtro_pedido = _filtros_cobrados(evento, punto_venta_id, desde, hasta)
+    filtro_rel = _filtros_cobrados(evento, punto_venta_id, desde, hasta, 'pedido__')
+    pedidos = Pedido.objects.filter(**filtro_pedido)
+
+    totales = pedidos.aggregate(
         total=Sum('total_final'),
         impuestos=Sum('total_impuestos'),
+        cantidad=Count('id'),
     )
-    total_general  = round(float(totales['total']   or 0), 2)
+    total_general = round(float(totales['total'] or 0), 2)
     total_impuestos = round(float(totales['impuestos'] or 0), 2)
-    total_pedidos  = Pedido.objects.filter(**filtro_pedido).count()
+    total_pedidos = totales['cantidad']
 
     metodos_display = dict(Pago.METODOS)
     por_metodo = [
@@ -228,7 +257,7 @@ def resumen_ventas(evento, punto_venta_id=None):
             'total': round(float(row['total']), 2),
         }
         for row in (
-            Pago.objects.filter(**filtro_pago)
+            Pago.objects.filter(**filtro_rel)
             .values('metodo')
             .annotate(total=Sum('monto'))
             .order_by('-total')
@@ -239,23 +268,88 @@ def resumen_ventas(evento, punto_venta_id=None):
         {
             'nombre': row['producto__nombre'],
             'unidades': row['unidades'],
+            'importe': round(float(row['importe']), 2),
         }
         for row in (
-            LineaPedido.objects.filter(**filtro_linea)
+            LineaPedido.objects.filter(**filtro_rel)
             .values('producto__nombre')
-            .annotate(unidades=Sum('cantidad'))
-            .order_by('-unidades')
+            .annotate(
+                unidades=Sum('cantidad'),
+                importe=Sum(ExpressionWrapper(
+                    F('cantidad') * F('precio_unitario'),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )),
+            )
+            .order_by('-unidades', 'producto__nombre')
         )
     ]
 
-    return {
-        'evento': evento.nombre,
+    pagos_por_caja = defaultdict(dict)
+    for row in (
+        Pago.objects.filter(**filtro_rel)
+        .values('pedido__punto_venta_id', 'metodo')
+        .annotate(total=Sum('monto'))
+    ):
+        pagos_por_caja[row['pedido__punto_venta_id']][row['metodo']] = round(float(row['total']), 2)
+    por_caja = [
+        {
+            'punto_venta_id': row['punto_venta_id'],
+            'nombre': row['punto_venta__nombre'],
+            'pedidos': row['cantidad'],
+            'total': round(float(row['total']), 2),
+            'por_metodo': pagos_por_caja.get(row['punto_venta_id'], {}),
+        }
+        for row in (
+            pedidos.values('punto_venta_id', 'punto_venta__nombre')
+            .annotate(cantidad=Count('id'), total=Sum('total_final'))
+            .order_by('punto_venta__nombre')
+        )
+    ]
+
+    franjas = {}
+    for creado, total in pedidos.values_list('creado', 'total_final'):
+        local = timezone.localtime(creado)
+        inicio = local.replace(minute=local.minute - local.minute % 15, second=0, microsecond=0)
+        franja = franjas.setdefault(inicio, {'pedidos': 0, 'total': Decimal('0')})
+        franja['pedidos'] += 1
+        franja['total'] += total
+    por_franja = [
+        {'franja': f'{inicio:%d/%m %H:%M}', 'pedidos': v['pedidos'], 'total': round(float(v['total']), 2)}
+        for inicio, v in sorted(franjas.items())
+    ]
+
+    resumen = {
+        'evento': evento.nombre if evento is not None else 'Todos los eventos',
+        'evento_id': evento.id if evento is not None else None,
+        'desde': desde.isoformat() if desde else None,
+        'hasta': hasta.isoformat() if hasta else None,
         'total_general': total_general,
         'total_impuestos': total_impuestos,
         'total_pedidos': total_pedidos,
+        'ticket_promedio': round(total_general / total_pedidos, 2) if total_pedidos else 0,
+        'unidades_total': sum(p['unidades'] for p in por_producto),
         'total_por_metodo': por_metodo,
         'por_producto': por_producto,
+        'por_caja': por_caja,
+        'por_franja': por_franja,
     }
+    if con_pedidos:
+        resumen['pedidos'] = [
+            {
+                'id': p.id,
+                'creado': timezone.localtime(p.creado).replace(tzinfo=None),
+                'evento': p.evento.nombre,
+                'caja': p.punto_venta.nombre,
+                'subtotal': float(p.subtotal),
+                'impuestos': float(p.total_impuestos),
+                'total': float(p.total_final),
+                'pagos': ' / '.join(
+                    f'{metodos_display.get(pg.metodo, pg.metodo)} {pg.monto:.2f}' for pg in p.pagos.all()
+                ),
+            }
+            for p in pedidos.select_related('evento', 'punto_venta').prefetch_related('pagos').order_by('creado')
+        ]
+    return resumen
 
 
 @csrf_exempt
@@ -283,11 +377,82 @@ def cierre_caja(request):
     return Response(resumen)
 
 
+def _parse_fecha(valor, nombre):
+    if not valor:
+        return None
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        raise ValidationError({nombre: 'Fecha inválida; usar AAAA-MM-DD.'})
+
+
+def _evento_por_defecto():
+    """El evento activo; si no hay (p. ej. recién cerrado), el más reciente."""
+    return (Evento.objects.filter(activo=True).order_by('-fecha', '-id').first()
+            or Evento.objects.order_by('-fecha', '-id').first())
+
+
+def _resumen_desde_request(request, con_pedidos=False):
+    """Lee evento ('todos' | id | vacío = por defecto), desde, hasta y punto_venta_id
+    de la query string y devuelve resumen_ventas(). Lo comparten las tres salidas."""
+    params = request.query_params
+    evento_param = params.get('evento')
+    if evento_param == 'todos':
+        evento = None
+    elif evento_param:
+        if not evento_param.isdigit():
+            raise ValidationError({'evento': 'Debe ser un id o "todos".'})
+        evento = get_object_or_404(Evento, id=int(evento_param))
+    else:
+        evento = _evento_por_defecto()
+        if evento is None:
+            raise NotFound('No hay eventos cargados.')
+
+    pv = params.get('punto_venta_id') or None
+    if pv and not pv.isdigit():
+        raise ValidationError({'punto_venta_id': 'Debe ser un id.'})
+    desde = _parse_fecha(params.get('desde'), 'desde')
+    hasta = _parse_fecha(params.get('hasta'), 'hasta')
+    if desde and hasta and desde > hasta:
+        raise ValidationError({'desde': 'La fecha desde no puede ser posterior a hasta.'})
+    return resumen_ventas(evento, pv, desde, hasta, con_pedidos=con_pedidos)
+
+
+@api_view(['GET'])
+def eventos_list(request):
+    eventos = Evento.objects.order_by('-fecha', '-id')
+    default = _evento_por_defecto()
+    return Response([
+        {'id': e.id, 'nombre': e.nombre, 'fecha': e.fecha.isoformat(), 'activo': e.activo,
+         'por_defecto': default is not None and e.id == default.id}
+        for e in eventos
+    ])
+
+
 @api_view(['GET'])
 def resumen_ventas_view(request):
-    evento = get_object_or_404(Evento, activo=True)
-    punto_venta_id = request.query_params.get('punto_venta_id') or None
-    return Response(resumen_ventas(evento, punto_venta_id))
+    return Response(_resumen_desde_request(request))
+
+
+@api_view(['GET'])
+def resumen_ventas_xlsx(request):
+    from .reportes import nombre_archivo, resumen_a_xlsx
+    resumen = _resumen_desde_request(request, con_pedidos=True)
+    resp = HttpResponse(
+        resumen_a_xlsx(resumen),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    resp['Content-Disposition'] = f'attachment; filename="{nombre_archivo(resumen, "xlsx")}"'
+    return resp
+
+
+@api_view(['GET'])
+def resumen_ventas_imprimir(request):
+    resumen = _resumen_desde_request(request)
+    return render(request._request, 'pdv/resumen_imprimible.html', {
+        'r': resumen,
+        'generado': timezone.localtime(),
+    })
 
 
 @csrf_exempt
