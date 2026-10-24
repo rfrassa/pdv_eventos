@@ -122,9 +122,9 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 |---|---|---|
 | 4.1 | `/api/me/` devuelve el rol y la caja correctos para `caja1` y para el administrador | ✅ (falla sin cambio ✔) `LoginYSesionTests`; también cajero sin caja y usuario sin rol |
 | 4.2 | La sesión dura lo que dice D5 | ✅ (falla sin cambio ✔) `SESSION_COOKIE_AGE` = 604800 y la sesión creada por el login vence a los 7 días. Suite completa 65 OK |
-| 4.3 (manual) | En el kiosco: login con `caja1`, venta mixta, salen 3 comandas con "Caja 1" | ⏳ pendiente de Rafael en el kiosco real (necesita impresoras). Pre-chequeo automático en navegador: login, caja tomada del usuario, `?pdv=` ignorado, guardar un pedido con CSRF queda en la caja del usuario ✅ 2026-10-24 |
-| 4.4 (manual) | Se reinicia el kiosco y sigue con la sesión iniciada | ⏳ pendiente de Rafael. Pre-chequeo automático (reiniciar Edge con el mismo perfil) ✅ 2026-10-24 |
-| 4.5 (manual) | Con la sesión vencida a propósito, va al login y al volver el carrito sigue | ⏳ pendiente de Rafael. Pre-chequeo automático (sesión borrada en el servidor, GUARDAR → login → ticket de 3 productos recuperado; otro usuario no lo hereda) ✅ 2026-10-24 |
+| 4.3 (manual) | En el kiosco: login con `caja1`, venta mixta, salen 3 comandas con "Caja 1" | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). Pre-chequeo automático en navegador: login, caja tomada del usuario, `?pdv=` ignorado, guardar un pedido con CSRF queda en la caja del usuario ✅ 2026-10-24 |
+| 4.4 (manual) | Se reinicia el kiosco y sigue con la sesión iniciada | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). Pre-chequeo automático (reiniciar Edge con el mismo perfil) ✅ 2026-10-24 |
+| 4.5 (manual) | Con la sesión vencida a propósito, va al login y al volver el carrito sigue | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). Pre-chequeo automático (sesión borrada en el servidor, GUARDAR → login → ticket de 3 productos recuperado; otro usuario no lo hereda) ✅ 2026-10-24 |
 
 ---
 
@@ -132,13 +132,14 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 - Backup, migración, `collectstatic` y `crear_cajeros`. Asignar las cajas en el admin.
 - **Hecho el 2026-10-24** (servidor apagado, Rafael autorizó "migrá"): backup `db_pre_permisos_20261024_1328.sqlite3` (integridad ok, 1028 pedidos / $15.097.000) y `migrate` de la base real a `0008` (integridad ok, totales 812 / $13.662.000 y 216 / $1.435.000 sin cambios).
 - `collectstatic` corrido el 2026-10-24 con el servidor apagado: `staticfiles/pwa/{app.js,sw.js,index.html}` idénticos a `static/pwa/` (`CACHE_NAME` v9).
-- **Pendiente de Rafael:** `crear_cajeros` (contraseñas por teclado), asignar las cajas en el admin y las pruebas 5.1 a 5.3.
+- **Hecho (2026-10-24):** `crear_cajeros` corrido por Rafael; `caja1/2/3` asignadas a las cajas 5/6/7, movidas al evento "Pruebas" (activo). Totales de Peña (812 / $13.662.000) y Expo (216 / $1.435.000) sin cambios. Pruebas 4.3-4.5 y 5.1-5.3 reportadas OK por Rafael.
+- **Sin resolver:** el 403 CSRF en `/login/` con `rafaelf` no se reprodujo ni se confirmó la causa. Si reaparece: anotar URL, probar InPrivate y, si solo falla en ventana normal, renombrar cookies (`pdv_sessionid`/`pdv_csrftoken`) en un commit aparte.
 - Nota: el servidor real corre en el puerto **8080** (los `.bat` fijan `PDV_SERVER_PORT=8080`). El 8000 lo ocupa un `portproxy` de Windows que no es del proyecto.
 - Checklist: creado en `docs/CHECKLIST_evento.md` (no existía en el repo).
 - Actualizar `CHECKLIST_evento` con el paso **"login de la caja"** después de crear el perfil del kiosco, y cómo recuperar una contraseña olvidada desde el admin.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 5.1 (manual) | Las dos cajas físicas hacen login y venden, cada una con su nombre en la comanda | |
-| 5.2 (manual) | Desde la notebook, sin login, `/api/resumen-ventas/xlsx/` no descarga nada | |
-| 5.3 (manual) | El tablero y el Excel funcionan logueado como administrador | |
+| 5.1 (manual) | Las dos cajas físicas hacen login y venden, cada una con su nombre en la comanda | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). |
+| 5.2 (manual) | Desde la notebook, sin login, `/api/resumen-ventas/xlsx/` no descarga nada | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). |
+| 5.3 (manual) | El tablero y el Excel funcionan logueado como administrador | ✅ Rafael 2026-10-24: "todo probado funcionando" (sin detalle por prueba). |
