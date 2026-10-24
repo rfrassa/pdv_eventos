@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone as dtz
 from decimal import Decimal
 from io import BytesIO, StringIO
@@ -116,6 +117,7 @@ class TableroEndpointsTests(DatosVentas):
 
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_superuser('admin', 'a@a.com', 'x'))
         self.pedido(self.junio, utc(2026, 6, 12, 15, 0), cantidad=1500)   # 1.500.000
         self.pedido(self.expo, utc(2026, 10, 23, 0, 30), cantidad=3)
         self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
@@ -162,9 +164,11 @@ class CierreDeEventoTests(DatosVentas):
         from django.contrib.auth import get_user_model
         self.cobrado = self.pedido(self.expo, utc(2026, 10, 23, 0, 30), cantidad=3)
         self.abierto = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
+        admin = get_user_model().objects.create_superuser('admin', 'a@a.com', 'x')
         self.api = APIClient()
+        self.api.force_authenticate(admin)
         self.admin_client = self.client_class()
-        self.admin_client.force_login(get_user_model().objects.create_superuser('admin', 'a@a.com', 'x'))
+        self.admin_client.force_login(admin)
 
     def accion_cerrar(self, cliente, ids, confirmar=False):
         datos = {'action': 'cerrar_evento', '_selected_action': ids}
@@ -397,3 +401,102 @@ class CajerosTests(DatosVentas):
         with self.assertRaises(IntegrityError), transaction.atomic():
             self.caja2.save()
 
+
+class PermisosApiTests(DatosVentas):
+    """La API exige login y permisos por rol (plan_permisos, ítem 2)."""
+
+    CLAVE = 'Clave-Segura-2026!'
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser('admin', 'a@a.com', self.CLAVE)
+        self.cajero = User.objects.create_user('caja1', password=self.CLAVE)
+        self.cajero.groups.add(Group.objects.get_or_create(name='Cajero')[0])
+        self.sin_rol = User.objects.create_user('intruso', password=self.CLAVE)
+        self.abierto = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
+
+    def cliente(self, usuario=None):
+        c = APIClient()
+        if usuario:
+            c.force_authenticate(usuario)
+        return c
+
+    def endpoints_api(self):
+        """(url, método) de cada ruta /api/ de urls.py, sin lista escrita a mano."""
+        from django.urls import get_resolver
+        resultado = []
+        for patron in get_resolver().url_patterns:
+            if not hasattr(patron, 'url_patterns'):
+                continue  # admin u otras rutas que no son include('pdv.urls')
+            for p in patron.url_patterns:
+                ruta = str(p.pattern)
+                if not ruta.startswith('api/'):
+                    continue
+                url = '/' + re.sub(r'<int:\w+>', str(self.abierto.id), ruta)
+                for metodo in p.callback.cls().allowed_methods:
+                    if metodo not in ('OPTIONS', 'HEAD'):
+                        resultado.append((url, metodo))
+        return resultado
+
+    def llamar(self, cliente, url, metodo):
+        return getattr(cliente, metodo.lower())(url, {}, format='json')
+
+    def pedido_nuevo(self):
+        return {'punto_venta': self.caja.id, 'lineas': [{'producto': self.choripan.id, 'cantidad': 1}]}
+
+    def test_2_1_sin_login_todos_los_endpoints_rechazan(self):
+        endpoints = self.endpoints_api()
+        self.assertGreaterEqual(len(endpoints), 18)
+        for url, metodo in endpoints:
+            resp = self.llamar(self.cliente(), url, metodo)
+            self.assertIn(resp.status_code, (401, 403), f'{metodo} {url} -> {resp.status_code}')
+
+    def test_2_2_cajero_crea_cobra_y_reimprime(self):
+        c = self.cliente(self.cajero)
+        resp = c.post('/api/pedidos/', self.pedido_nuevo(), format='json')
+        self.assertEqual(resp.status_code, 201)
+        cobro = dict(self.pedido_nuevo(), pagos=[{'metodo': 'EF', 'monto': '1000'}])
+        self.assertEqual(c.post('/api/pedidos/', cobro, format='json').status_code, 201)
+        with mock.patch('pdv.utils.ticket_handler.imprimir_ticket'):
+            resp = c.post(f'/api/pedidos/{self.abierto.id}/reimprimir/', {}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        for url in ('/api/pedidos/abiertos/', '/api/pedidos/historial/', '/api/productos/', '/api/pdv/',
+                    f'/api/pedidos/{self.abierto.id}/'):
+            self.assertEqual(c.get(url).status_code, 200, url)
+
+    def test_2_3_cajero_recibe_403_en_lo_del_administrador(self):
+        c = self.cliente(self.cajero)
+        for url in ('/api/resumen-ventas/', '/api/resumen-ventas/xlsx/', '/api/resumen-ventas/imprimir/',
+                    '/api/eventos/', f'/api/productos/{self.choripan.id}/'):
+            self.assertEqual(c.get(url).status_code, 403, url)
+        self.assertEqual(c.post('/api/cierre-caja/', {}, format='json').status_code, 403)
+        self.assertEqual(c.post('/api/test-print/', {}, format='json').status_code, 403)
+        resp = c.post('/api/productos/', {'nombre': 'X', 'precio': '1', 'categoria': 1}, format='json')
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(c.patch(f'/api/productos/{self.choripan.id}/', {'precio': '1'}, format='json').status_code, 403)
+
+    def test_usuario_sin_rol_no_entra_a_nada(self):
+        c = self.cliente(self.sin_rol)
+        for url, metodo in self.endpoints_api():
+            self.assertEqual(self.llamar(c, url, metodo).status_code, 403, f'{metodo} {url}')
+
+    def test_2_4_administrador_puede_usar_todo(self):
+        c = self.cliente(self.admin)
+        for url in ('/api/resumen-ventas/', '/api/resumen-ventas/xlsx/', '/api/resumen-ventas/imprimir/',
+                    '/api/eventos/', '/api/productos/', f'/api/productos/{self.choripan.id}/',
+                    '/api/pedidos/abiertos/', '/api/pedidos/historial/', '/api/pdv/'):
+            self.assertEqual(c.get(url).status_code, 200, url)
+        self.assertEqual(c.post('/api/cierre-caja/', {}, format='json').status_code, 200)
+        self.assertEqual(c.post('/api/pedidos/', self.pedido_nuevo(), format='json').status_code, 201)
+
+    def test_2_5_post_sin_csrf_con_sesion_se_rechaza(self):
+        c = APIClient(enforce_csrf_checks=True)
+        self.assertTrue(c.login(username='caja1', password=self.CLAVE))
+        antes = Pedido.objects.count()
+        resp = c.post('/api/pedidos/', self.pedido_nuevo(), format='json')
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Pedido.objects.count(), antes)
+        # con el token, la misma llamada entra
+        c.get('/')  # ensure_csrf_cookie
+        token = c.cookies['csrftoken'].value
+        resp = c.post('/api/pedidos/', self.pedido_nuevo(), format='json', HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(resp.status_code, 201)

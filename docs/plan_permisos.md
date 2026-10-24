@@ -66,10 +66,10 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 1.1 | La migración aplica sobre una copia de la base, y los totales siguen en 812 / $13.662.000 y 216 / $1.435.000 | ✅ (sin cambio la columna `usuario_id` no existe ✔) copia en 0008, totales 812 / 13662000 y 216 / 1435000; base real intacta en 0007. 2026-10-24 |
-| 1.2 | `crear_cajeros`, corrido dos veces, deja 3 usuarios y ninguno duplicado | ✅ (falla sin cambio ✔) `CajerosTests` |
-| 1.3 | Un cajero no es staff y no puede entrar al admin | ✅ (falla sin cambio ✔) `CajerosTests` |
-| 1.4 | Dos cajas no pueden tener el mismo usuario | ✅ (falla sin cambio ✔) `CajerosTests`; suite completa 36 OK |
+| 1.1 | La migración aplica sobre una copia de la base, y los totales siguen en 812 / $13.662.000 y 216 / $1.435.000 | ✅ (sin cambio la columna `usuario_id` no existe ✔) copia en 0008, totales 812 / 13662000 y 216 / 1435000; base real intacta en 0007. 2026-10-24 `1f6ebd8` |
+| 1.2 | `crear_cajeros`, corrido dos veces, deja 3 usuarios y ninguno duplicado | ✅ (falla sin cambio ✔) `CajerosTests` `1f6ebd8` |
+| 1.3 | Un cajero no es staff y no puede entrar al admin | ✅ (falla sin cambio ✔) `CajerosTests` `1f6ebd8` |
+| 1.4 | Dos cajas no pueden tener el mismo usuario | ✅ (falla sin cambio ✔) `CajerosTests`; suite completa 36 OK `1f6ebd8` |
 
 ---
 
@@ -77,14 +77,16 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 - DRF por defecto: `SessionAuthentication` + `IsAuthenticated`.
 - Dos permisos: `EsCajeroOAdmin` y `EsAdmin`, aplicados según la matriz del ítem 0 y las decisiones D3 y D4.
 - El Excel, el imprimible, `/api/resumen-ventas/` y `/api/eventos/` quedan **solo para el administrador**.
+- También solo administrador (decisión del inventario): productos (escritura y detalle), `test-print` y `cierre-caja`. Se quita `@csrf_exempt` de 5 vistas (en DRF el CSRF lo aplica `SessionAuthentication`).
+- **No desplegar este ítem solo:** hasta el ítem 4 el kiosco no tiene login y dejaría de funcionar.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 2.1 | Sin login, **todos** los endpoints de la API devuelven 401 o 403 (recorriendo `urls.py`, no con una lista escrita a mano) | |
-| 2.2 | Un cajero puede crear y cobrar pedidos y reimprimir | |
-| 2.3 | Un cajero recibe 403 en el resumen, el Excel, el imprimible y la lista de eventos | |
-| 2.4 | El administrador puede usar todo | |
-| 2.5 | Un POST sin token CSRF, con sesión iniciada, se rechaza | |
+| 2.1 | Sin login, **todos** los endpoints de la API devuelven 401 o 403 (recorriendo `urls.py`, no con una lista escrita a mano) | ✅ (falla sin cambio ✔) `PermisosApiTests`, 24 combinaciones ruta+método |
+| 2.2 | Un cajero puede crear y cobrar pedidos y reimprimir | ✅ (positivo: pasa también sin cambio; protege contra restringir de más) |
+| 2.3 | Un cajero recibe 403 en el resumen, el Excel, el imprimible y la lista de eventos | ✅ (falla sin cambio ✔) también productos, cierre y test-print; un usuario sin rol recibe 403 en todo |
+| 2.4 | El administrador puede usar todo | ✅ (positivo: pasa también sin cambio) |
+| 2.5 | Un POST sin token CSRF, con sesión iniciada, se rechaza | ✅ (falla sin cambio ✔) y con el token entra (201). Suite completa 42 OK |
 
 ---
 

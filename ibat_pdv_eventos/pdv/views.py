@@ -8,13 +8,14 @@ from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
+from .permisos import CajeroLeeAdminEscribe, EsAdmin, EsCajeroOAdmin
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -26,6 +27,7 @@ from .serializers import (
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([CajeroLeeAdminEscribe])
 def productos_list(request):
     evento_activo = get_object_or_404(Evento, activo=True)
 
@@ -51,6 +53,7 @@ def productos_list(request):
 
 
 @api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([EsAdmin])
 def producto_detail(request, producto_id):
     producto = get_object_or_404(Producto, id=producto_id)
 
@@ -84,8 +87,8 @@ def _imprimir_en_background(pedido_id):
         logger.error(f"Error imprimiendo pedido #{pedido_id}: {e}")
 
 
-@csrf_exempt
 @api_view(['POST'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_create(request):
     serializer = PedidoCreateSerializer(data=request.data)
     if serializer.is_valid():
@@ -97,6 +100,7 @@ def pedido_create(request):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def pedidos_abiertos(request):
     evento_activo = get_object_or_404(Evento, activo=True)
     punto_venta_id = request.query_params.get('punto_venta_id')
@@ -112,6 +116,7 @@ def pedidos_abiertos(request):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def pedidos_historial(request):
     evento_activo = get_object_or_404(Evento, activo=True)
     punto_venta_id = request.query_params.get('punto_venta_id')
@@ -137,6 +142,7 @@ def pedidos_historial(request):
 
 
 @api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_detail(request, pedido_id):
     if request.method == 'GET':
         pedido = get_object_or_404(
@@ -172,8 +178,8 @@ def pedido_detail(request, pedido_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@csrf_exempt
 @api_view(['POST'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_reimprimir(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     try:
@@ -189,8 +195,8 @@ def pedido_reimprimir(request, pedido_id):
         return Response({'ok': False, 'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@csrf_exempt
 @api_view(['GET', 'POST'])
+@permission_classes([EsAdmin])
 def test_print(request):
     ip = request.data.get('ip') if request.method == 'POST' else request.query_params.get('ip', '192.168.0.58')
     puerto = int(request.data.get('puerto', 9100) if request.method == 'POST' else request.query_params.get('puerto', 9100))
@@ -365,8 +371,8 @@ def resumen_ventas(evento, punto_venta_id=None, desde=None, hasta=None, con_pedi
     return resumen
 
 
-@csrf_exempt
 @api_view(['POST'])
+@permission_classes([EsAdmin])
 def cierre_caja(request):
     evento = get_object_or_404(Evento, activo=True)
     punto_venta_id = request.data.get('punto_venta_id')
@@ -432,6 +438,7 @@ def _resumen_desde_request(request, con_pedidos=False):
 
 
 @api_view(['GET'])
+@permission_classes([EsAdmin])
 def eventos_list(request):
     eventos = Evento.objects.order_by('-fecha', '-id')
     default = _evento_por_defecto()
@@ -444,11 +451,13 @@ def eventos_list(request):
 
 
 @api_view(['GET'])
+@permission_classes([EsAdmin])
 def resumen_ventas_view(request):
     return Response(_resumen_desde_request(request))
 
 
 @api_view(['GET'])
+@permission_classes([EsAdmin])
 def resumen_ventas_xlsx(request):
     from .reportes import nombre_archivo, resumen_a_xlsx
     resumen = _resumen_desde_request(request, con_pedidos=True)
@@ -461,6 +470,7 @@ def resumen_ventas_xlsx(request):
 
 
 @api_view(['GET'])
+@permission_classes([EsAdmin])
 def resumen_ventas_imprimir(request):
     resumen = _resumen_desde_request(request)
     return render(request._request, 'pdv/resumen_imprimible.html', {
@@ -469,8 +479,8 @@ def resumen_ventas_imprimir(request):
     })
 
 
-@csrf_exempt
 @api_view(['POST'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_imprimir_local(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     printer_name = request.data.get('printer_name')
@@ -489,6 +499,7 @@ def pedido_imprimir_local(request, pedido_id):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_imprimir_pdf(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
     try:
@@ -537,6 +548,7 @@ def pedido_imprimir_pdf(request, pedido_id):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def pedido_ticket_html(request, pedido_id):
     import html as htmllib
     pedido = get_object_or_404(
@@ -601,6 +613,7 @@ def pedido_ticket_html(request, pedido_id):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def impresoras_disponibles(request):
     try:
         from .utils.local_printer import LocalPrinterService
@@ -618,6 +631,7 @@ def pwa_index(request):
 
 
 @api_view(['GET'])
+@permission_classes([EsCajeroOAdmin])
 def pdvs_list(request):
     evento_activo = get_object_or_404(Evento, activo=True)
     pdvs = PuntoVenta.objects.filter(evento=evento_activo)

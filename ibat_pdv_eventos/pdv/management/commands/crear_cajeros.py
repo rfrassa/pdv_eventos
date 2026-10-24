@@ -5,8 +5,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
+from pdv.permisos import GRUPO_CAJERO
+
 CAJEROS = ['caja1', 'caja2', 'caja3']
-GRUPO_CAJERO = 'Cajero'
 
 
 class Command(BaseCommand):
