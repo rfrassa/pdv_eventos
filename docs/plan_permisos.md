@@ -82,11 +82,11 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 2.1 | Sin login, **todos** los endpoints de la API devuelven 401 o 403 (recorriendo `urls.py`, no con una lista escrita a mano) | ✅ (falla sin cambio ✔) `PermisosApiTests`, 24 combinaciones ruta+método |
-| 2.2 | Un cajero puede crear y cobrar pedidos y reimprimir | ✅ (positivo: pasa también sin cambio; protege contra restringir de más) |
-| 2.3 | Un cajero recibe 403 en el resumen, el Excel, el imprimible y la lista de eventos | ✅ (falla sin cambio ✔) también productos, cierre y test-print; un usuario sin rol recibe 403 en todo |
-| 2.4 | El administrador puede usar todo | ✅ (positivo: pasa también sin cambio) |
-| 2.5 | Un POST sin token CSRF, con sesión iniciada, se rechaza | ✅ (falla sin cambio ✔) y con el token entra (201). Suite completa 42 OK |
+| 2.1 | Sin login, **todos** los endpoints de la API devuelven 401 o 403 (recorriendo `urls.py`, no con una lista escrita a mano) | ✅ (falla sin cambio ✔) `PermisosApiTests`, 24 combinaciones ruta+método `7422dfd` |
+| 2.2 | Un cajero puede crear y cobrar pedidos y reimprimir | ✅ (positivo: pasa también sin cambio; protege contra restringir de más) `7422dfd` |
+| 2.3 | Un cajero recibe 403 en el resumen, el Excel, el imprimible y la lista de eventos | ✅ (falla sin cambio ✔) también productos, cierre y test-print; un usuario sin rol recibe 403 en todo `7422dfd` |
+| 2.4 | El administrador puede usar todo | ✅ (positivo: pasa también sin cambio) `7422dfd` |
+| 2.5 | Un POST sin token CSRF, con sesión iniciada, se rechaza | ✅ (falla sin cambio ✔) y con el token entra (201). Suite completa 42 OK `7422dfd` |
 
 ---
 
@@ -94,14 +94,16 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 - Al crear un pedido, `punto_venta` sale del usuario; si el cliente manda otro, se ignora. Un cajero sin caja asignada recibe 403 con un mensaje claro.
 - El historial y los pedidos abiertos se filtran por la caja del cajero (el administrador ve todo).
 - Un cajero solo puede borrar pedidos sin cobrar **de su caja**. Las reglas de pedidos cobrados y de eventos cerrados siguen igual.
+- Cualquier endpoint por `<id>` de pedido (ver, editar, borrar, reimprimir, imprimir) da 403 si el pedido es de otra caja. `/api/pdv/` le devuelve al cajero solo su caja. El administrador no tiene restricción.
+- `app.js` sigue mandando `punto_venta_id` y `?pdv=`: el servidor lo ignora para el cajero. Se limpia en el ítem 4.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 3.1 | `caja2` manda `punto_venta=5` y el pedido queda en la caja 6 | |
-| 3.2 | `caja1` no ve el historial de la caja 2 | |
-| 3.3 | `caja1` no puede borrar un pedido sin cobrar de la caja 2 (403) | |
-| 3.4 | Un cajero sin caja asignada no puede crear pedidos (403 con mensaje) | |
-| 3.5 | Siguen vigentes las reglas de pedidos cobrados y eventos cerrados (409) | |
+| 3.1 | `caja2` manda `punto_venta=5` y el pedido queda en la caja 6 | ✅ (falla sin cambio ✔) `caja2` manda la caja 1 y el pedido queda en la caja 2; sin `punto_venta` también; el administrador sigue eligiendo |
+| 3.2 | `caja1` no ve el historial de la caja 2 | ✅ (falla sin cambio ✔) historial, abiertos (aun pidiendo la otra caja) y `/api/pdv/`; el administrador ve todo |
+| 3.3 | `caja1` no puede borrar un pedido sin cobrar de la caja 2 (403) | ✅ (falla sin cambio ✔) también GET, PATCH, reimprimir, imprimir-local, imprimir-pdf y ticket-html; sí puede borrar uno propio sin cobrar (204) |
+| 3.4 | Un cajero sin caja asignada no puede crear pedidos (403 con mensaje) | ✅ (falla sin cambio ✔) mensaje: "Tu usuario no tiene una caja asignada..."; también 403 en historial, abiertos, `/pdv/` y detalle |
+| 3.5 | Siguen vigentes las reglas de pedidos cobrados y eventos cerrados (409) | ✅ (regresión: pasa también sin cambio) DELETE cobrado 409; evento cerrado: DELETE y PATCH 409, alta 400. Suite completa 53 OK |
 
 ---
 

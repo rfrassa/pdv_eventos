@@ -411,6 +411,7 @@ class PermisosApiTests(DatosVentas):
         self.admin = User.objects.create_superuser('admin', 'a@a.com', self.CLAVE)
         self.cajero = User.objects.create_user('caja1', password=self.CLAVE)
         self.cajero.groups.add(Group.objects.get_or_create(name='Cajero')[0])
+        PuntoVenta.objects.filter(id=self.caja.id).update(usuario=self.cajero)
         self.sin_rol = User.objects.create_user('intruso', password=self.CLAVE)
         self.abierto = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
 
@@ -500,3 +501,111 @@ class PermisosApiTests(DatosVentas):
         token = c.cookies['csrftoken'].value
         resp = c.post('/api/pedidos/', self.pedido_nuevo(), format='json', HTTP_X_CSRFTOKEN=token)
         self.assertEqual(resp.status_code, 201)
+
+
+class CajaPropiaTests(DatosVentas):
+    """Cada cajero opera solo sobre su caja (plan_permisos, ítem 3)."""
+
+    CLAVE = 'Clave-Segura-2026!'
+
+    def setUp(self):
+        grupo = Group.objects.get_or_create(name='Cajero')[0]
+        self.u1 = User.objects.create_user('caja1', password=self.CLAVE)
+        self.u2 = User.objects.create_user('caja2', password=self.CLAVE)
+        self.u3 = User.objects.create_user('caja3', password=self.CLAVE)   # cajero sin caja asignada
+        for u in (self.u1, self.u2, self.u3):
+            u.groups.add(grupo)
+        PuntoVenta.objects.filter(id=self.caja.id).update(usuario=self.u1)
+        PuntoVenta.objects.filter(id=self.caja2.id).update(usuario=self.u2)
+        self.admin = User.objects.create_superuser('admin', 'a@a.com', self.CLAVE)
+        self.abierto1 = self.pedido(self.expo, utc(2026, 10, 23, 0, 10), cerrado=False, caja=self.caja)
+        self.abierto2 = self.pedido(self.expo, utc(2026, 10, 23, 0, 20), cerrado=False, caja=self.caja2)
+        self.cobrado1 = self.pedido(self.expo, utc(2026, 10, 23, 0, 30), caja=self.caja)
+        self.cobrado2 = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), caja=self.caja2)
+
+    def api(self, usuario):
+        c = APIClient()
+        c.force_authenticate(usuario)
+        return c
+
+    def nuevo(self, punto_venta):
+        return {'punto_venta': punto_venta.id, 'lineas': [{'producto': self.choripan.id, 'cantidad': 1}]}
+
+    def ids(self, resp):
+        datos = resp.json()
+        return {p['id'] for p in (datos['resultados'] if isinstance(datos, dict) else datos)}
+
+    def test_3_1_la_caja_sale_del_usuario_no_de_lo_que_manda_el_cliente(self):
+        resp = self.api(self.u2).post('/api/pedidos/', self.nuevo(self.caja), format='json')   # caja2 dice ser caja1
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(Pedido.objects.get(id=resp.json()['id']).punto_venta_id, self.caja2.id)
+
+    def test_3_1_sin_punto_venta_en_el_cuerpo_tambien_usa_la_del_usuario(self):
+        cuerpo = self.nuevo(self.caja)
+        del cuerpo['punto_venta']
+        resp = self.api(self.u1).post('/api/pedidos/', cuerpo, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(Pedido.objects.get(id=resp.json()['id']).punto_venta_id, self.caja.id)
+
+    def test_cuerpo_que_no_es_un_objeto_da_400_y_no_500(self):
+        resp = self.api(self.u1).post('/api/pedidos/', [1, 2], format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_el_administrador_elige_la_caja(self):
+        resp = self.api(self.admin).post('/api/pedidos/', self.nuevo(self.caja2), format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(Pedido.objects.get(id=resp.json()['id']).punto_venta_id, self.caja2.id)
+
+    def test_3_2_el_cajero_no_ve_el_historial_ni_los_abiertos_de_otra_caja(self):
+        c = self.api(self.u1)
+        for url in ('/api/pedidos/historial/', '/api/pedidos/abiertos/'):
+            propios = self.ids(c.get(url))
+            self.assertTrue(propios, url)
+            self.assertTrue(propios <= {self.abierto1.id, self.cobrado1.id}, url)
+            # pedir explícitamente la otra caja no cambia nada
+            self.assertEqual(self.ids(c.get(url, {'punto_venta_id': self.caja2.id})), propios, url)
+        self.assertEqual(self.ids(self.api(self.admin).get('/api/pedidos/historial/')),
+                         {self.abierto1.id, self.abierto2.id, self.cobrado1.id, self.cobrado2.id})
+
+    def test_el_cajero_ve_solo_su_caja_en_la_lista_de_cajas(self):
+        resp = self.api(self.u1).get('/api/pdv/')
+        self.assertEqual([p['id'] for p in resp.json()], [self.caja.id])
+        self.assertEqual(len(self.api(self.admin).get('/api/pdv/').json()), 2)
+
+    def test_3_3_el_cajero_no_toca_pedidos_de_otra_caja(self):
+        c = self.api(self.u1)
+        otro = self.abierto2.id
+        self.assertEqual(c.delete(f'/api/pedidos/{otro}/').status_code, 403)
+        self.assertTrue(Pedido.objects.filter(id=otro).exists())
+        self.assertEqual(c.get(f'/api/pedidos/{otro}/').status_code, 403)
+        self.assertEqual(c.patch(f'/api/pedidos/{otro}/', {'lineas': [{'producto': self.agua.id, 'cantidad': 1}]},
+                                 format='json').status_code, 403)
+        self.assertEqual(c.post(f'/api/pedidos/{otro}/reimprimir/', {}, format='json').status_code, 403)
+        self.assertEqual(c.post(f'/api/pedidos/{otro}/imprimir-local/', {}, format='json').status_code, 403)
+        self.assertEqual(c.get(f'/api/pedidos/{otro}/imprimir-pdf/').status_code, 403)
+        self.assertEqual(c.get(f'/api/pedidos/{otro}/ticket-html/').status_code, 403)
+
+    def test_el_cajero_si_borra_un_pedido_abierto_de_su_caja(self):
+        self.assertEqual(self.api(self.u1).delete(f'/api/pedidos/{self.abierto1.id}/').status_code, 204)
+
+    def test_el_administrador_toca_pedidos_de_cualquier_caja(self):
+        self.assertEqual(self.api(self.admin).delete(f'/api/pedidos/{self.abierto2.id}/').status_code, 204)
+
+    def test_3_4_cajero_sin_caja_no_puede_operar(self):
+        c = self.api(self.u3)
+        resp = c.post('/api/pedidos/', self.nuevo(self.caja), format='json')
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn('caja', resp.json()['detail'].lower())
+        self.assertFalse(Pedido.objects.filter(creado__gte=utc(2026, 10, 24, 0, 0)).exists())
+        for url in ('/api/pedidos/historial/', '/api/pedidos/abiertos/', '/api/pdv/', f'/api/pedidos/{self.abierto1.id}/'):
+            self.assertEqual(c.get(url).status_code, 403, url)
+
+    def test_3_5_siguen_las_reglas_de_pedidos_cobrados_y_eventos_cerrados(self):
+        c = self.api(self.u1)
+        self.assertEqual(c.delete(f'/api/pedidos/{self.cobrado1.id}/').status_code, 409)
+        self.assertTrue(Pedido.objects.filter(id=self.cobrado1.id).exists())
+        Evento.objects.filter(id=self.expo.id).update(activo=False, cerrado_en=utc(2026, 10, 23, 12, 0))
+        self.assertEqual(c.delete(f'/api/pedidos/{self.abierto1.id}/').status_code, 409)
+        resp = c.patch(f'/api/pedidos/{self.abierto1.id}/', {'lineas': [{'producto': self.agua.id, 'cantidad': 1}]}, format='json')
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(c.post('/api/pedidos/', self.nuevo(self.caja), format='json').status_code, 400)

@@ -15,7 +15,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
-from .permisos import CajeroLeeAdminEscribe, EsAdmin, EsCajeroOAdmin
+from .permisos import CajeroLeeAdminEscribe, EsAdmin, EsCajeroOAdmin, caja_restringida, exigir_pedido_de_su_caja
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -90,7 +90,11 @@ def _imprimir_en_background(pedido_id):
 @api_view(['POST'])
 @permission_classes([EsCajeroOAdmin])
 def pedido_create(request):
-    serializer = PedidoCreateSerializer(data=request.data)
+    data = request.data.copy()
+    caja = caja_restringida(request.user)
+    if caja is not None and hasattr(data, 'items'):  # si no es un objeto, el serializer lo rechaza con 400
+        data['punto_venta'] = caja.id  # la caja sale del usuario; lo que mande el cliente se ignora
+    serializer = PedidoCreateSerializer(data=data)
     if serializer.is_valid():
         pedido = serializer.save()
         data = PedidoDetailSerializer(pedido).data
@@ -103,7 +107,8 @@ def pedido_create(request):
 @permission_classes([EsCajeroOAdmin])
 def pedidos_abiertos(request):
     evento_activo = get_object_or_404(Evento, activo=True)
-    punto_venta_id = request.query_params.get('punto_venta_id')
+    caja = caja_restringida(request.user)
+    punto_venta_id = caja.id if caja else request.query_params.get('punto_venta_id')
     pedidos = Pedido.objects.filter(
         cerrado=False,
         evento=evento_activo,
@@ -119,7 +124,8 @@ def pedidos_abiertos(request):
 @permission_classes([EsCajeroOAdmin])
 def pedidos_historial(request):
     evento_activo = get_object_or_404(Evento, activo=True)
-    punto_venta_id = request.query_params.get('punto_venta_id')
+    caja = caja_restringida(request.user)
+    punto_venta_id = caja.id if caja else request.query_params.get('punto_venta_id')
     pagina = int(request.query_params.get('pagina', 1))
     limite = int(request.query_params.get('limite', 50))
 
@@ -149,10 +155,12 @@ def pedido_detail(request, pedido_id):
             Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'),
             id=pedido_id,
         )
+        exigir_pedido_de_su_caja(request.user, pedido)
         serializer = PedidoDetailSerializer(pedido)
         return Response(serializer.data)
 
     pedido = get_object_or_404(Pedido.objects.select_related('evento'), id=pedido_id)
+    exigir_pedido_de_su_caja(request.user, pedido)
     if pedido.evento.cerrado:
         return Response(
             {'detail': f'El evento "{pedido.evento.nombre}" está cerrado; sus pedidos no se pueden modificar ni borrar.'},
@@ -182,6 +190,7 @@ def pedido_detail(request, pedido_id):
 @permission_classes([EsCajeroOAdmin])
 def pedido_reimprimir(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    exigir_pedido_de_su_caja(request.user, pedido)
     try:
         from .utils.ticket_handler import imprimir_ticket
         imprimir_ticket(pedido)
@@ -483,6 +492,7 @@ def resumen_ventas_imprimir(request):
 @permission_classes([EsCajeroOAdmin])
 def pedido_imprimir_local(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta__evento').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    exigir_pedido_de_su_caja(request.user, pedido)
     printer_name = request.data.get('printer_name')
     try:
         from .utils.local_printer import LocalPrinterService, ip_para_pdv
@@ -502,6 +512,7 @@ def pedido_imprimir_local(request, pedido_id):
 @permission_classes([EsCajeroOAdmin])
 def pedido_imprimir_pdf(request, pedido_id):
     pedido = get_object_or_404(Pedido.objects.select_related('punto_venta').prefetch_related('lineas__producto', 'pagos'), id=pedido_id)
+    exigir_pedido_de_su_caja(request.user, pedido)
     try:
         from .utils.ticket_formatter import TicketFormatter
         formatter = TicketFormatter()
@@ -556,6 +567,7 @@ def pedido_ticket_html(request, pedido_id):
                       .prefetch_related('lineas__producto__categoria', 'pagos'),
         id=pedido_id,
     )
+    exigir_pedido_de_su_caja(request.user, pedido)
     from .utils.ticket_formatter import TicketFormatter
     formatter = TicketFormatter()
 
@@ -635,6 +647,9 @@ def pwa_index(request):
 def pdvs_list(request):
     evento_activo = get_object_or_404(Evento, activo=True)
     pdvs = PuntoVenta.objects.filter(evento=evento_activo)
+    caja = caja_restringida(request.user)
+    if caja is not None:
+        pdvs = pdvs.filter(id=caja.id)
     from .serializers import PuntoVentaSerializer
     serializer = PuntoVentaSerializer(pdvs, many=True)
     return Response(serializer.data)
