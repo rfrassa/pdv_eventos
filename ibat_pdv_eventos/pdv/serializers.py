@@ -134,7 +134,12 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
         fields = ['punto_venta', 'lineas', 'pagos']
 
     def validate(self, data):
-        if not data['punto_venta'].evento.activo:
+        evento = data['punto_venta'].evento
+        if evento.cerrado:
+            raise serializers.ValidationError(
+                {'punto_venta': f'El evento "{evento.nombre}" está cerrado; no se pueden cargar pedidos.'}
+            )
+        if not evento.activo:
             raise serializers.ValidationError(
                 {'punto_venta': 'El evento de este punto de venta no está activo; no se pueden cargar pedidos.'}
             )

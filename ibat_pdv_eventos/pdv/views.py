@@ -146,12 +146,25 @@ def pedido_detail(request, pedido_id):
         serializer = PedidoDetailSerializer(pedido)
         return Response(serializer.data)
 
+    pedido = get_object_or_404(Pedido.objects.select_related('evento'), id=pedido_id)
+    if pedido.evento.cerrado:
+        return Response(
+            {'detail': f'El evento "{pedido.evento.nombre}" está cerrado; sus pedidos no se pueden modificar ni borrar.'},
+            status=status.HTTP_409_CONFLICT,
+        )
+
     if request.method == 'DELETE':
-        pedido = get_object_or_404(Pedido, id=pedido_id)
+        if pedido.cerrado:
+            # Un pedido cobrado es dinero registrado: si hay que anularlo, es un estado, no un borrado.
+            return Response(
+                {'detail': 'Un pedido cobrado no se puede borrar.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         pedido.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    pedido = get_object_or_404(Pedido, id=pedido_id, cerrado=False)
+    if pedido.cerrado:
+        return Response({'detail': 'No se puede editar un pedido cobrado.'}, status=status.HTTP_404_NOT_FOUND)
     serializer = PedidoUpdateSerializer(pedido, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
@@ -424,6 +437,7 @@ def eventos_list(request):
     default = _evento_por_defecto()
     return Response([
         {'id': e.id, 'nombre': e.nombre, 'fecha': e.fecha.isoformat(), 'activo': e.activo,
+         'cerrado_en': timezone.localtime(e.cerrado_en).isoformat() if e.cerrado_en else None,
          'por_defecto': default is not None and e.id == default.id}
         for e in eventos
     ])
