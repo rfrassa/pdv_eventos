@@ -60,7 +60,7 @@ class EventoAdmin(admin.ModelAdmin):
 
 @admin.register(PuntoVenta)
 class PuntoVentaAdmin(admin.ModelAdmin):
-    list_display = ['nombre', 'impresora_ip', 'evento']
+    list_display = ['nombre', 'impresora_ip', 'evento', 'usuario']
 
 
 @admin.register(Categoria)

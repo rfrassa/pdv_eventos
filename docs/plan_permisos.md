@@ -61,15 +61,15 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 
 ## Ítem 1 — Roles y usuarios de caja (cambia el esquema)
 - **Rol administrador** = `is_staff`. **Rol cajero** = grupo `Cajero`.
-- `PuntoVenta.usuario = ForeignKey(User, null=True, blank=True, on_delete=PROTECT)`. Una caja tiene, como mucho, un usuario.
+- `PuntoVenta.usuario = OneToOneField(User, null=True, blank=True, on_delete=PROTECT)` (equivale a un FK único; evita el warning W342). Una caja tiene, como mucho, un usuario y un usuario no puede tener dos cajas.
 - Comando `manage.py crear_cajeros`: crea `caja1`, `caja2` y `caja3` en el grupo `Cajero`, pide la contraseña por teclado y no la escribe en ningún archivo ni log. Se puede correr dos veces sin duplicar nada.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 1.1 | La migración aplica sobre una copia de la base, y los totales siguen en 812 / $13.662.000 y 216 / $1.435.000 | |
-| 1.2 | `crear_cajeros`, corrido dos veces, deja 3 usuarios y ninguno duplicado | |
-| 1.3 | Un cajero no es staff y no puede entrar al admin | |
-| 1.4 | Dos cajas no pueden tener el mismo usuario | |
+| 1.1 | La migración aplica sobre una copia de la base, y los totales siguen en 812 / $13.662.000 y 216 / $1.435.000 | ✅ (sin cambio la columna `usuario_id` no existe ✔) copia en 0008, totales 812 / 13662000 y 216 / 1435000; base real intacta en 0007. 2026-10-24 |
+| 1.2 | `crear_cajeros`, corrido dos veces, deja 3 usuarios y ninguno duplicado | ✅ (falla sin cambio ✔) `CajerosTests` |
+| 1.3 | Un cajero no es staff y no puede entrar al admin | ✅ (falla sin cambio ✔) `CajerosTests` |
+| 1.4 | Dos cajas no pueden tener el mismo usuario | ✅ (falla sin cambio ✔) `CajerosTests`; suite completa 36 OK |
 
 ---
 

@@ -1,7 +1,12 @@
 from datetime import date, datetime, timezone as dtz
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 
+from unittest import mock
+
+from django.contrib.auth.models import Group, User
+from django.core.management import call_command
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
@@ -353,3 +358,42 @@ class PedidoAdminTests(DatosVentas):
         resp = self.c.get('/admin/pdv/pedido/add/')
         self.assertNotContains(resp, 'Expo 2026')
         self.assertContains(resp, 'Peña 2026')
+
+
+class CajerosTests(DatosVentas):
+    """Roles y usuarios de caja (plan_permisos, ítem 1)."""
+
+    CLAVE = 'Clave-Segura-2026!'
+
+    def crear_cajeros(self):
+        with mock.patch('pdv.management.commands.crear_cajeros.getpass', return_value=self.CLAVE):
+            call_command('crear_cajeros', stdout=StringIO())
+
+    def test_crear_cajeros_dos_veces_no_duplica(self):
+        self.crear_cajeros()
+        self.crear_cajeros()
+        usuarios = User.objects.filter(username__in=['caja1', 'caja2', 'caja3'])
+        self.assertEqual(usuarios.count(), 3)
+        self.assertEqual(User.objects.count(), 3)
+        self.assertEqual(Group.objects.filter(name='Cajero').count(), 1)
+        for u in usuarios:
+            self.assertEqual(list(u.groups.values_list('name', flat=True)), ['Cajero'])
+
+    def test_cajero_no_es_staff_ni_entra_al_admin(self):
+        self.crear_cajeros()
+        caja1 = User.objects.get(username='caja1')
+        self.assertFalse(caja1.is_staff)
+        self.assertFalse(caja1.is_superuser)
+        self.assertTrue(self.client.login(username='caja1', password=self.CLAVE))
+        resp = self.client.get('/admin/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+
+    def test_dos_cajas_no_comparten_usuario(self):
+        usuario = User.objects.create_user('caja1', password=self.CLAVE)
+        self.caja.usuario = usuario
+        self.caja.save()
+        self.caja2.usuario = usuario
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.caja2.save()
+

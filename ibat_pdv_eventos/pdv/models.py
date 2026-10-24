@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -46,6 +47,11 @@ class PuntoVenta(models.Model):
     nombre = models.CharField(max_length=100)
     impresora_ip = models.CharField(max_length=15, blank=True, null=True, verbose_name='IP de la impresora')
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='puntos_venta')
+    # Usuario cajero de esta caja (caja1, caja2...). Un usuario no puede tener dos cajas.
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='punto_venta', verbose_name='Usuario cajero',
+    )
 
     class Meta:
         verbose_name = 'Punto de Venta'
