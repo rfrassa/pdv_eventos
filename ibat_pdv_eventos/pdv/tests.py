@@ -147,3 +147,126 @@ class TableroEndpointsTests(DatosVentas):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, '$1.500.000,00')
         self.assertContains(resp, '@media print')
+
+
+class CierreDeEventoTests(DatosVentas):
+    """Cerrar un evento: acción del admin (solo staff), sin tocar pedidos, y con las
+    reglas de borrado/edición de pedidos cobrados o de eventos cerrados."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        self.cobrado = self.pedido(self.expo, utc(2026, 10, 23, 0, 30), cantidad=3)
+        self.abierto = self.pedido(self.expo, utc(2026, 10, 23, 0, 40), cerrado=False)
+        self.api = APIClient()
+        self.admin_client = self.client_class()
+        self.admin_client.force_login(get_user_model().objects.create_superuser('admin', 'a@a.com', 'x'))
+
+    def accion_cerrar(self, cliente, ids, confirmar=False):
+        datos = {'action': 'cerrar_evento', '_selected_action': ids}
+        if confirmar:
+            datos.update({'confirmar': 'si', 'post': 'yes'})
+        return cliente.post('/admin/pdv/evento/', datos)
+
+    def cerrar_expo(self):
+        self.accion_cerrar(self.admin_client, [self.expo.id], confirmar=True)
+        self.expo.refresh_from_db()
+
+    # --- la acción del admin ---
+    def test_la_confirmacion_muestra_el_total_y_todavia_no_cierra(self):
+        resp = self.accion_cerrar(self.admin_client, [self.expo.id])
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, '$3.000,00')
+        self.assertContains(resp, '1 pedido sin cobrar')
+        self.expo.refresh_from_db()
+        self.assertIsNone(self.expo.cerrado_en)
+        self.assertTrue(self.expo.activo)
+
+    def test_confirmar_cierra_sin_tocar_los_pedidos(self):
+        antes = list(Pedido.objects.order_by('id').values_list('id', 'cerrado', 'total_final'))
+        resp = self.accion_cerrar(self.admin_client, [self.expo.id], confirmar=True)
+        self.assertEqual(resp.status_code, 302)
+        self.expo.refresh_from_db()
+        self.assertFalse(self.expo.activo)
+        self.assertIsNotNone(self.expo.cerrado_en)
+        self.assertEqual(list(Pedido.objects.order_by('id').values_list('id', 'cerrado', 'total_final')), antes)
+        self.assertEqual(resumen_ventas(self.expo)['total_general'], 3000)  # el resumen sigue igual
+
+    def test_sin_login_de_staff_no_cierra(self):
+        resp = self.accion_cerrar(self.client_class(), [self.expo.id], confirmar=True)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/login/', resp['Location'])
+        self.expo.refresh_from_db()
+        self.assertIsNone(self.expo.cerrado_en)
+
+    def test_no_se_cierran_dos_eventos_a_la_vez(self):
+        self.accion_cerrar(self.admin_client, [self.expo.id, self.junio.id], confirmar=True)
+        self.expo.refresh_from_db()
+        self.junio.refresh_from_db()
+        self.assertIsNone(self.expo.cerrado_en)
+        self.assertIsNone(self.junio.cerrado_en)
+
+    def test_cerrar_dos_veces_no_cambia_la_hora(self):
+        self.cerrar_expo()
+        primera = self.expo.cerrado_en
+        self.accion_cerrar(self.admin_client, [self.expo.id], confirmar=True)
+        self.expo.refresh_from_db()
+        self.assertEqual(self.expo.cerrado_en, primera)
+
+    def test_un_evento_cerrado_no_puede_quedar_activo(self):
+        from django.core.exceptions import ValidationError
+        self.cerrar_expo()
+        self.expo.activo = True
+        with self.assertRaises(ValidationError):
+            self.expo.full_clean()
+        self.expo.cerrado_en = None  # reabrir es vaciar "Cerrado en"
+        self.expo.full_clean()
+
+    # --- pedidos nuevos ---
+    def nuevo_pedido(self):
+        return self.api.post('/api/pedidos/', {
+            'punto_venta': self.caja.id, 'lineas': [{'producto': self.choripan.id, 'cantidad': 1}],
+        }, format='json')
+
+    def test_se_rechazan_pedidos_nuevos_de_un_evento_cerrado(self):
+        self.assertEqual(self.nuevo_pedido().status_code, 201)
+        self.cerrar_expo()
+        resp = self.nuevo_pedido()
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('punto_venta', resp.json())
+
+    def test_cerrado_en_rechaza_aunque_quede_activo(self):
+        Evento.objects.filter(id=self.expo.id).update(cerrado_en=utc(2026, 10, 23, 12, 0))
+        resp = self.nuevo_pedido()
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('cerrado', str(resp.json()['punto_venta']))
+
+    # --- DELETE / PATCH ---
+    def test_no_se_borra_un_pedido_cobrado(self):
+        resp = self.api.delete(f'/api/pedidos/{self.cobrado.id}/')
+        self.assertEqual(resp.status_code, 409)
+        self.assertTrue(Pedido.objects.filter(id=self.cobrado.id).exists())
+
+    def test_si_se_borra_un_pedido_abierto(self):
+        self.assertEqual(self.api.delete(f'/api/pedidos/{self.abierto.id}/').status_code, 204)
+        self.assertFalse(Pedido.objects.filter(id=self.abierto.id).exists())
+
+    def test_con_el_evento_cerrado_no_se_borra_ni_edita_nada(self):
+        self.cerrar_expo()
+        for pedido in (self.cobrado, self.abierto):
+            self.assertEqual(self.api.delete(f'/api/pedidos/{pedido.id}/').status_code, 409)
+            resp = self.api.patch(f'/api/pedidos/{pedido.id}/', {'lineas': [{'producto': self.agua.id, 'cantidad': 1}]}, format='json')
+            self.assertEqual(resp.status_code, 409)
+        self.assertEqual(Pedido.objects.count(), 2)
+        self.assertEqual(self.abierto.lineas.get().producto_id, self.choripan.id)
+
+    def test_se_puede_editar_un_pedido_abierto_de_un_evento_abierto(self):
+        resp = self.api.patch(f'/api/pedidos/{self.abierto.id}/', {'lineas': [{'producto': self.agua.id, 'cantidad': 2}]}, format='json')
+        self.assertEqual(resp.status_code, 200)
+
+    # --- tablero ---
+    def test_eventos_informa_el_cierre(self):
+        self.cerrar_expo()
+        data = {e['id']: e for e in self.api.get('/api/eventos/').json()}
+        self.assertIsNotNone(data[self.expo.id]['cerrado_en'])
+        self.assertIsNone(data[self.junio.id]['cerrado_en'])
+        self.assertEqual(self.api.get('/api/resumen-ventas/', {'evento': self.expo.id}).json()['total_general'], 3000)
