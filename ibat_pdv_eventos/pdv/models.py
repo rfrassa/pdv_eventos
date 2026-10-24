@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 # TODO(post-peña-2026): refactorizar modelo de productos.
@@ -13,10 +14,27 @@ class Evento(models.Model):
     nombre = models.CharField(max_length=200)
     fecha = models.DateField()
     activo = models.BooleanField(default=False)
+    cerrado_en = models.DateTimeField(
+        null=True, blank=True, verbose_name='Cerrado en',
+        help_text='Lo completa la acción "Cerrar evento" del admin. Para reabrir: vaciar este campo y marcar activo.',
+    )
 
     class Meta:
         verbose_name = 'Evento'
         verbose_name_plural = 'Eventos'
+
+    @property
+    def cerrado(self):
+        return self.cerrado_en is not None
+
+    @property
+    def acepta_ventas(self):
+        return self.activo and not self.cerrado
+
+    def clean(self):
+        # Un evento no puede quedar activo y cerrado a la vez; reabrir es una decisión explícita.
+        if self.activo and self.cerrado:
+            raise ValidationError('Para reabrir el evento hay que vaciar "Cerrado en"; un evento cerrado no puede estar activo.')
 
     def __str__(self):
         return f"{self.nombre} ({self.fecha})"
