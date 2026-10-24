@@ -77,6 +77,9 @@ class Producto(models.Model):
 
 class Pedido(models.Model):
     punto_venta = models.ForeignKey(PuntoVenta, on_delete=models.CASCADE, related_name='pedidos')
+    # Evento al que pertenece la venta, fijado al crear el pedido. No se deduce
+    # de punto_venta.evento porque los PV se reasignan entre eventos.
+    evento = models.ForeignKey(Evento, on_delete=models.PROTECT, related_name='pedidos')
     creado = models.DateTimeField(auto_now_add=True)
     cerrado = models.BooleanField(default=False)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
