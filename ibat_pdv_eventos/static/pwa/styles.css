@@ -997,6 +997,20 @@ button {
     margin-top: 8px;
 }
 
+.dashboard-evento-estado {
+    font-size: 0.8rem;
+    color: var(--text);
+}
+
+.dashboard-evento-estado.cerrado {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.dashboard-evento-estado a {
+    margin-left: 6px;
+}
+
 .dashboard-fechas {
     display: flex;
     gap: 8px;

@@ -792,7 +792,7 @@ async function cargarHistorial() {
                     <div style="display:flex;gap:6px">
                         <button class="btn-resume-order" onclick="toggleDetalle(${p.id})">Ver</button>
                         <button class="btn-resume-order" onclick="imprimirEnPC(${p.id})">Imprimir${p.veces_impreso ? ' (' + p.veces_impreso + ')' : ''}</button>
-                        <button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedidoHistorial(${p.id})">Eliminar</button>
+                        ${p.cerrado ? '' : `<button class="btn-resume-order" style="background:var(--accent)" onclick="eliminarPedidoHistorial(${p.id})">Eliminar</button>`}
                     </div>
                 </div>
             `;
@@ -1229,6 +1229,7 @@ async function imprimirTicketNavegador(id) {
 
 // --- TABLERO EN VIVO ---
 let _dashboardInterval = null;
+let _eventosDashboard = [];
 
 function toggleDashboard() {
     const overlay = document.getElementById('dashboard-overlay');
@@ -1259,19 +1260,50 @@ async function cargarEventosDashboard() {
     const previo = sel.value;
     try {
         const eventos = await apiFetch('/api/eventos/');
-        sel.innerHTML = eventos.map(e =>
-            `<option value="${e.id}">${e.nombre}${e.activo ? ' (activo)' : ''}</option>`
-        ).join('') + '<option value="todos">Todos los eventos</option>';
+        _eventosDashboard = eventos;
+        sel.innerHTML = '';
+        eventos.forEach(e => {
+            const opt = document.createElement('option');
+            opt.value = e.id;
+            opt.textContent = e.nombre + (e.cerrado_en ? ' (cerrado)' : e.activo ? ' (activo)' : '');
+            sel.appendChild(opt);
+        });
+        const todos = document.createElement('option');
+        todos.value = 'todos';
+        todos.textContent = 'Todos los eventos';
+        sel.appendChild(todos);
         const defecto = eventos.find(e => e.por_defecto);
         sel.value = previo || (defecto ? String(defecto.id) : 'todos');
+        mostrarEstadoEvento();
     } catch (e) {
         showNotification('No se pudieron cargar los eventos: ' + e.message, 'error');
     }
 }
 
+// Estado del evento elegido. El cierre se hace desde el admin de Django (requiere login de staff).
+function mostrarEstadoEvento() {
+    const el = document.getElementById('dashboard-evento-estado');
+    const evento = _eventosDashboard.find(e => String(e.id) === document.getElementById('dashboard-evento-select').value);
+    el.textContent = '';
+    el.className = 'dashboard-evento-estado';
+    if (!evento) return;
+    if (evento.cerrado_en) {
+        el.classList.add('cerrado');
+        el.textContent = 'Cerrado el ' + new Date(evento.cerrado_en).toLocaleString();
+    } else {
+        el.textContent = evento.activo ? 'Abierto' : 'Inactivo';
+    }
+    const enlace = document.createElement('a');
+    enlace.href = API_BASE + '/admin/pdv/evento/';
+    enlace.target = '_blank';
+    enlace.textContent = 'Administrar eventos';
+    el.appendChild(enlace);
+}
+
 function cambiarEventoDashboard() {
     // Las cajas listadas son las del evento activo; al cambiar de evento se vuelve a "todas".
     document.getElementById('dashboard-pdv-select').value = '';
+    mostrarEstadoEvento();
     cargarDashboard();
 }
 

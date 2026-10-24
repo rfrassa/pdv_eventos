@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ibat-pdv-cache-v7';
+const CACHE_NAME = 'ibat-pdv-cache-v8';
 const STATIC_ASSETS = [
     '/',
     '/static/pwa/index.html',
