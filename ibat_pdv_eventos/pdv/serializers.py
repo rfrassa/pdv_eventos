@@ -134,6 +134,11 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
         fields = ['punto_venta', 'lineas', 'pagos']
 
     def validate(self, data):
+        if not data['punto_venta'].evento.activo:
+            raise serializers.ValidationError(
+                {'punto_venta': 'El evento de este punto de venta no está activo; no se pueden cargar pedidos.'}
+            )
+
         lineas_data = data.get('lineas', [])
         if not lineas_data:
             raise serializers.ValidationError('Debe incluir al menos una línea de pedido.')
@@ -167,6 +172,7 @@ class PedidoCreateSerializer(serializers.ModelSerializer):
 
         pedido = Pedido.objects.create(
             **validated_data,
+            evento=validated_data['punto_venta'].evento,
             subtotal=subtotal,
             descuento_porcentaje=Decimal('0'),
             total_impuestos=total_impuestos,
