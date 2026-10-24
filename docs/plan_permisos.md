@@ -131,7 +131,8 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 ## Ítem 5 — Despliegue y checklist
 - Backup, migración, `collectstatic` y `crear_cajeros`. Asignar las cajas en el admin.
 - **Hecho el 2026-10-24** (servidor apagado, Rafael autorizó "migrá"): backup `db_pre_permisos_20261024_1328.sqlite3` (integridad ok, 1028 pedidos / $15.097.000) y `migrate` de la base real a `0008` (integridad ok, totales 812 / $13.662.000 y 216 / $1.435.000 sin cambios).
-- **Pendiente de Rafael:** `collectstatic`, `crear_cajeros` (contraseñas por teclado), asignar las cajas en el admin y las pruebas 5.1 a 5.3.
+- `collectstatic` corrido el 2026-10-24 con el servidor apagado: `staticfiles/pwa/{app.js,sw.js,index.html}` idénticos a `static/pwa/` (`CACHE_NAME` v9).
+- **Pendiente de Rafael:** `crear_cajeros` (contraseñas por teclado), asignar las cajas en el admin y las pruebas 5.1 a 5.3.
 - Nota: el servidor real corre en el puerto **8080** (los `.bat` fijan `PDV_SERVER_PORT=8080`). El 8000 lo ocupa un `portproxy` de Windows que no es del proyecto.
 - Checklist: creado en `docs/CHECKLIST_evento.md` (no existía en el repo).
 - Actualizar `CHECKLIST_evento` con el paso **"login de la caja"** después de crear el perfil del kiosco, y cómo recuperar una contraseña olvidada desde el admin.
