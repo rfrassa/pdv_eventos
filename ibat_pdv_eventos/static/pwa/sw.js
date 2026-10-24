@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ibat-pdv-cache-v8';
+const CACHE_NAME = 'ibat-pdv-cache-v9';
 const STATIC_ASSETS = [
     '/',
     '/static/pwa/index.html',
@@ -32,6 +32,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
+
+    // Login, logout y admin siempre van a la red: el formulario lleva un token CSRF que no puede quedar cacheado.
+    if (url.pathname === '/login/' || url.pathname === '/logout/' || url.pathname.startsWith('/admin/')) {
+        return;
+    }
 
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(

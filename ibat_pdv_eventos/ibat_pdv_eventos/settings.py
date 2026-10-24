@@ -142,6 +142,13 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Login del kiosco. La sesión dura 7 días: no puede vencer en plena peña (plan_permisos, D5).
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/login/'
+SESSION_COOKIE_AGE = 7 * 24 * 3600
+# TODO(deuda): el login no limita intentos fallidos (red local de la peña). Si el servidor se expone fuera de la LAN, agregar rate limit.
+
 # La API exige sesión (con CSRF en las escrituras). Cada vista declara su rol en pdv/permisos.py;
 # IsAuthenticated queda como red de seguridad para una vista nueva que olvide declararlo.
 REST_FRAMEWORK = {

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PDV Eventos - Ingresar</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+               background: #f2f2f2; font-family: Arial, sans-serif; color: #222; }
+        .card { width: 100%; max-width: 420px; margin: 16px; padding: 28px 24px; background: #fff;
+                border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+        h1 { margin: 0 0 20px; font-size: 1.6rem; text-align: center; }
+        label { display: block; margin: 14px 0 6px; font-size: 1.05rem; font-weight: 600; }
+        input[type=text], input[type=password] { width: 100%; min-height: 56px; padding: 10px 14px;
+                font-size: 1.3rem; border: 2px solid #bbb; border-radius: 8px; }
+        input:focus { outline: none; border-color: #1565c0; }
+        button { width: 100%; min-height: 60px; margin-top: 22px; font-size: 1.3rem; font-weight: 700;
+                 color: #fff; background: #1565c0; border: 0; border-radius: 8px; }
+        .error { margin-top: 14px; padding: 12px 14px; font-size: 1.05rem; color: #b71c1c;
+                 background: #fdecea; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <form class="card" method="post" action="{% url 'login' %}">
+        {% csrf_token %}
+        <h1>PDV Eventos</h1>
+        {% if form.non_field_errors %}
+            <div class="error" role="alert">{{ form.non_field_errors.0 }}</div>
+        {% endif %}
+        <label for="id_username">Usuario</label>
+        <input type="text" name="username" id="id_username" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
+        <label for="id_password">Contraseña</label>
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit">INGRESAR</button>
+    </form>
+</body>
+</html>

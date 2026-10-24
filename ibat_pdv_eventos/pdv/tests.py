@@ -478,6 +478,8 @@ class PermisosApiTests(DatosVentas):
     def test_usuario_sin_rol_no_entra_a_nada(self):
         c = self.cliente(self.sin_rol)
         for url, metodo in self.endpoints_api():
+            if url == '/api/me/':
+                continue  # a propósito: el frontend le explica al usuario sin rol por qué no puede operar
             self.assertEqual(self.llamar(c, url, metodo).status_code, 403, f'{metodo} {url}')
 
     def test_2_4_administrador_puede_usar_todo(self):
@@ -609,3 +611,87 @@ class CajaPropiaTests(DatosVentas):
         resp = c.patch(f'/api/pedidos/{self.abierto1.id}/', {'lineas': [{'producto': self.agua.id, 'cantidad': 1}]}, format='json')
         self.assertEqual(resp.status_code, 409)
         self.assertEqual(c.post('/api/pedidos/', self.nuevo(self.caja), format='json').status_code, 400)
+
+
+class LoginYSesionTests(DatosVentas):
+    """Login del kiosco, /api/me/ y duración de la sesión (plan_permisos, ítem 4)."""
+
+    CLAVE = 'Clave-Segura-2026!'
+
+    def setUp(self):
+        grupo = Group.objects.get_or_create(name='Cajero')[0]
+        self.caja1 = User.objects.create_user('caja1', password=self.CLAVE)
+        self.caja1.groups.add(grupo)
+        PuntoVenta.objects.filter(id=self.caja.id).update(usuario=self.caja1)
+        self.sin_caja = User.objects.create_user('caja3', password=self.CLAVE)
+        self.sin_caja.groups.add(grupo)
+        self.admin = User.objects.create_superuser('admin', 'a@a.com', self.CLAVE)
+        self.sin_rol = User.objects.create_user('intruso', password=self.CLAVE)
+
+    def me(self, usuario):
+        c = APIClient()
+        c.force_authenticate(usuario)
+        return c.get('/api/me/')
+
+    def test_4_1_me_devuelve_rol_y_caja_del_cajero(self):
+        resp = self.me(self.caja1)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {'username': 'caja1', 'rol': 'cajero', 'caja': {'id': self.caja.id, 'nombre': 'Caja 1'}})
+
+    def test_4_1_me_devuelve_rol_admin_sin_caja(self):
+        self.assertEqual(self.me(self.admin).json(), {'username': 'admin', 'rol': 'admin', 'caja': None})
+
+    def test_me_de_cajero_sin_caja_y_de_usuario_sin_rol(self):
+        self.assertEqual(self.me(self.sin_caja).json(), {'username': 'caja3', 'rol': 'cajero', 'caja': None})
+        self.assertEqual(self.me(self.sin_rol).json(), {'username': 'intruso', 'rol': None, 'caja': None})
+
+    def test_me_sin_login_se_rechaza(self):
+        self.assertEqual(APIClient().get('/api/me/').status_code, 403)
+
+    def test_login_correcto_vuelve_a_la_app(self):
+        resp = self.client.post('/login/', {'username': 'caja1', 'password': self.CLAVE})
+        self.assertRedirects(resp, '/', fetch_redirect_response=False)
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.caja1.id)
+
+    def test_login_respeta_next_solo_si_es_del_mismo_sitio(self):
+        resp = self.client.post('/login/', {'username': 'caja1', 'password': self.CLAVE, 'next': '/admin/'})
+        self.assertRedirects(resp, '/admin/', fetch_redirect_response=False)
+        self.client.logout()
+        resp = self.client.post('/login/', {'username': 'caja1', 'password': self.CLAVE, 'next': 'https://evil.example/'})
+        self.assertRedirects(resp, '/', fetch_redirect_response=False)
+
+    def test_login_con_clave_incorrecta_no_inicia_sesion(self):
+        resp = self.client.post('/login/', {'username': 'caja1', 'password': 'otra'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_login_de_usuario_sin_rol_se_rechaza_con_mensaje(self):
+        resp = self.client.post('/login/', {'username': 'intruso', 'password': self.CLAVE})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'no es cajero ni administrador')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_login_de_usuario_inactivo_se_rechaza(self):
+        User.objects.filter(id=self.caja1.id).update(is_active=False)
+        resp = self.client.post('/login/', {'username': 'caja1', 'password': self.CLAVE})
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_la_pagina_de_login_se_ve_sin_sesion(self):
+        resp = self.client.get('/login/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'csrfmiddlewaretoken')
+
+    def test_4_2_la_sesion_dura_7_dias(self):
+        from django.conf import settings
+        self.assertEqual(settings.SESSION_COOKIE_AGE, 7 * 24 * 3600)
+        self.client.post('/login/', {'username': 'caja1', 'password': self.CLAVE})
+        self.assertEqual(self.client.session.get_expiry_age(), 7 * 24 * 3600)
+
+    def test_logout_cierra_la_sesion_y_solo_por_post(self):
+        self.client.login(username='caja1', password=self.CLAVE)
+        self.assertEqual(self.client.get('/logout/').status_code, 405)
+        self.assertIn('_auth_user_id', self.client.session)
+        resp = self.client.post('/logout/')
+        self.assertRedirects(resp, '/login/', fetch_redirect_response=False)
+        self.assertNotIn('_auth_user_id', self.client.session)

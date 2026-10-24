@@ -25,6 +25,7 @@ let state = {
     pedidoEditando: null,
     pdvActual: null,
     pdvs: [],
+    me: null,
     evento: null,
     pagos: [],
     metodoSeleccionado: null,
@@ -67,6 +68,76 @@ function mensajeDeError(err) {
     return 'Error del servidor';
 }
 
+// --- SESION ---
+// El DRF responde 403 tanto a "no hay sesion" como a "no tenes permiso": /api/me/ distingue los dos casos.
+async function sesionVencida() {
+    try {
+        const res = await fetch(API_BASE + '/api/me/', { cache: 'no-store' });
+        return res.status === 401 || res.status === 403;
+    } catch (e) {
+        return false;  // sin red no se sabe: se muestra el error normal, sin mandar al login
+    }
+}
+
+// Guarda el ticket para que sobreviva al login. Solo se restaura si vuelve a entrar el mismo usuario.
+const CARRITO_KEY = 'pdv_carrito_pendiente';
+const CARRITO_MAX_EDAD_MS = 24 * 60 * 60 * 1000;
+
+function guardarCarrito() {
+    if (!state.me || state.ticket.length === 0) return;
+    try {
+        localStorage.setItem(CARRITO_KEY, JSON.stringify({
+            usuario: state.me.username,
+            ticket: state.ticket,
+            pedidoEditando: state.pedidoEditando,
+            guardado: Date.now(),
+        }));
+    } catch (e) {
+        console.error('No se pudo guardar el ticket antes del login', e);
+    }
+}
+
+function restaurarCarrito() {
+    let guardado;
+    try {
+        guardado = JSON.parse(localStorage.getItem(CARRITO_KEY) || 'null');
+        localStorage.removeItem(CARRITO_KEY);
+    } catch (e) {
+        console.error('No se pudo leer el ticket guardado', e);
+        return;
+    }
+    if (!guardado || guardado.usuario !== state.me.username) return;
+    if (Date.now() - guardado.guardado > CARRITO_MAX_EDAD_MS) return;
+    const idsVigentes = new Set(state.productos.map(p => p.id));
+    const lineas = (guardado.ticket || []).filter(l => idsVigentes.has(l.producto));
+    if (lineas.length === 0) return;
+    state.ticket = lineas;
+    state.pedidoEditando = guardado.pedidoEditando || null;
+    renderTicket();
+    showNotification('Se recuperó el ticket que tenías abierto', 'warning');
+}
+
+let redirigiendoAlLogin = false;
+function irAlLogin() {
+    if (redirigiendoAlLogin) return;
+    redirigiendoAlLogin = true;
+    guardarCarrito();
+    window.location.href = '/login/?next=/';
+}
+
+async function cerrarSesion() {
+    const aviso = state.ticket.length > 0 ? 'Hay un ticket sin guardar que se va a perder. ' : '';
+    if (!confirm(aviso + '¿Cerrar la sesión de ' + (state.me ? state.me.username : 'este usuario') + '?')) return;
+    try {
+        localStorage.removeItem(CARRITO_KEY);
+        await fetch(API_BASE + '/logout/', { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+    } catch (e) {
+        showNotification('No se pudo cerrar la sesión: ' + e.message, 'error');
+        return;
+    }
+    window.location.href = '/login/';
+}
+
 async function apiFetch(url, options = {}) {
     const config = {
         headers: {
@@ -83,6 +154,10 @@ async function apiFetch(url, options = {}) {
         throw new Error('Error de conexión');
     }
     if (!res.ok) {
+        if ((res.status === 401 || res.status === 403) && (url.startsWith('/api/me/') || await sesionVencida())) {
+            irAlLogin();
+            throw new Error('Sesión vencida: volvé a ingresar');
+        }
         const err = await res.json().catch(() => ({ error: 'Error del servidor (' + res.status + ')' }));
         throw new Error(mensajeDeError(err));
     }
@@ -171,6 +246,15 @@ function bloquearVenta(msg) {
 // --- INIT ---
 async function init() {
     try {
+        state.me = await apiFetch('/api/me/');
+        if (!state.me.rol) {
+            bloquearVenta('Tu usuario (' + state.me.username + ') no es cajero ni administrador — avisale al administrador');
+            return;
+        }
+        if (state.me.rol === 'cajero' && !state.me.caja) {
+            bloquearVenta('Tu usuario (' + state.me.username + ') no tiene una caja asignada — avisale al administrador');
+            return;
+        }
         const [productos, pdvs, impData] = await Promise.all([
             apiFetch('/api/productos/?disponibles=false'),
             apiFetch('/api/pdv/').catch(() => null),
@@ -206,18 +290,30 @@ async function init() {
             return;
         }
         state.pdvs = pdvs;
-        // Cada caja abre con su PV via ?pdv=<id>. Sin parametro: primer PV (comportamiento anterior).
-        const pdvParam = new URLSearchParams(window.location.search).get('pdv');
-        state.pdvActual = state.pdvs[0];
-        if (pdvParam !== null) {
-            const pdvElegido = state.pdvs.find(p => String(p.id) === pdvParam);
-            if (!pdvElegido) {
-                // Nunca vender en otra caja por error: bloquear con error persistente.
-                bloquearVenta('El punto de venta ' + pdvParam + ' no existe para el evento activo — revisar el acceso directo');
+        if (state.me.rol === 'cajero') {
+            // La caja sale del usuario, no de la URL (?pdv= se ignora para el cajero).
+            state.pdvActual = state.pdvs.find(p => p.id === state.me.caja.id);
+            if (!state.pdvActual) {
+                bloquearVenta('Tu caja (' + state.me.caja.nombre + ') no pertenece al evento activo — avisale al administrador');
                 return;
             }
-            state.pdvActual = pdvElegido;
+            document.getElementById('btn-tablero').style.display = 'none';
+            document.getElementById('btn-cambiar-pdv').style.display = 'none';
+        } else {
+            // Administrador: elige la caja con ?pdv=<id>. Sin parametro: primer PV (comportamiento anterior).
+            const pdvParam = new URLSearchParams(window.location.search).get('pdv');
+            state.pdvActual = state.pdvs[0];
+            if (pdvParam !== null) {
+                const pdvElegido = state.pdvs.find(p => String(p.id) === pdvParam);
+                if (!pdvElegido) {
+                    // Nunca vender en otra caja por error: bloquear con error persistente.
+                    bloquearVenta('El punto de venta ' + pdvParam + ' no existe para el evento activo — revisar el acceso directo');
+                    return;
+                }
+                state.pdvActual = pdvElegido;
+            }
         }
+        document.getElementById('sidebar-usuario').textContent = state.me.username;
         state.evento = { nombre: 'PDV Eventos' };
 
         document.getElementById('evento-nombre').textContent = state.evento.nombre || 'PDV Eventos';
@@ -227,6 +323,7 @@ async function init() {
         renderCategorias();
         renderProductos();
         renderTicket();
+        restaurarCarrito();
         actualizarBadgePendientes();
         setInterval(actualizarBadgePendientes, 15000);
     } catch (e) {

@@ -99,11 +99,11 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 3.1 | `caja2` manda `punto_venta=5` y el pedido queda en la caja 6 | ✅ (falla sin cambio ✔) `caja2` manda la caja 1 y el pedido queda en la caja 2; sin `punto_venta` también; el administrador sigue eligiendo |
-| 3.2 | `caja1` no ve el historial de la caja 2 | ✅ (falla sin cambio ✔) historial, abiertos (aun pidiendo la otra caja) y `/api/pdv/`; el administrador ve todo |
-| 3.3 | `caja1` no puede borrar un pedido sin cobrar de la caja 2 (403) | ✅ (falla sin cambio ✔) también GET, PATCH, reimprimir, imprimir-local, imprimir-pdf y ticket-html; sí puede borrar uno propio sin cobrar (204) |
-| 3.4 | Un cajero sin caja asignada no puede crear pedidos (403 con mensaje) | ✅ (falla sin cambio ✔) mensaje: "Tu usuario no tiene una caja asignada..."; también 403 en historial, abiertos, `/pdv/` y detalle |
-| 3.5 | Siguen vigentes las reglas de pedidos cobrados y eventos cerrados (409) | ✅ (regresión: pasa también sin cambio) DELETE cobrado 409; evento cerrado: DELETE y PATCH 409, alta 400. Suite completa 53 OK |
+| 3.1 | `caja2` manda `punto_venta=5` y el pedido queda en la caja 6 | ✅ (falla sin cambio ✔) `caja2` manda la caja 1 y el pedido queda en la caja 2; sin `punto_venta` también; el administrador sigue eligiendo `14fc653` |
+| 3.2 | `caja1` no ve el historial de la caja 2 | ✅ (falla sin cambio ✔) historial, abiertos (aun pidiendo la otra caja) y `/api/pdv/`; el administrador ve todo `14fc653` |
+| 3.3 | `caja1` no puede borrar un pedido sin cobrar de la caja 2 (403) | ✅ (falla sin cambio ✔) también GET, PATCH, reimprimir, imprimir-local, imprimir-pdf y ticket-html; sí puede borrar uno propio sin cobrar (204) `14fc653` |
+| 3.4 | Un cajero sin caja asignada no puede crear pedidos (403 con mensaje) | ✅ (falla sin cambio ✔) mensaje: "Tu usuario no tiene una caja asignada..."; también 403 en historial, abiertos, `/pdv/` y detalle `14fc653` |
+| 3.5 | Siguen vigentes las reglas de pedidos cobrados y eventos cerrados (409) | ✅ (regresión: pasa también sin cambio) DELETE cobrado 409; evento cerrado: DELETE y PATCH 409, alta 400. Suite completa 53 OK `14fc653` |
 
 ---
 
@@ -112,14 +112,19 @@ Con eso se completa la matriz del ítem 2 **antes** de escribir código.
 - `GET /api/me/` devuelve el usuario, el rol y la caja. El frontend toma la caja de ahí, no de `?pdv=`.
 - `apiFetch` manda `X-CSRFToken` en los POST, PATCH y DELETE. Ante un 401 o 403 por sesión vencida, lleva al login **sin perder el carrito**.
 - `SESSION_COOKIE_AGE` según D5. Sube `CACHE_NAME` y se ejecuta `collectstatic`.
+- Implementación: `LoginView` en `/login/` (formulario que solo deja entrar a administradores y cajeros), `/logout/` solo por POST, `/api/me/`. El service worker no cachea `/login/`, `/logout/` ni `/admin/` (el formulario lleva token CSRF); `CACHE_NAME` pasó a v9. Para distinguir "sesión vencida" de "sin permiso" (DRF responde 403 a ambos), `apiFetch` consulta `/api/me/`. El ticket se guarda en `localStorage` solo si la sesión venció, y se restaura únicamente si vuelve a entrar el mismo usuario (máximo 24 h).
+- El cajero no ve "Tablero" ni "Cambiar PDV". El administrador sigue eligiendo la caja con `?pdv=`.
+- **`collectstatic` NO se corrió en este ítem**: `staticfiles/` es lo que sirve el servidor real, y el `app.js` nuevo contra el backend viejo rompería el kiosco. Se hace en el ítem 5, junto con el reinicio del servidor.
+- Deuda visible: el login no limita intentos fallidos (TODO en `settings.py`).
+- Probado con navegador automatizado (Edge headless) contra un servidor temporal en el puerto 8001 con una copia de la base; el servidor real no se tocó.
 
 | Test | Esperado | Resultado |
 |---|---|---|
-| 4.1 | `/api/me/` devuelve el rol y la caja correctos para `caja1` y para el administrador | |
-| 4.2 | La sesión dura lo que dice D5 | |
-| 4.3 (manual) | En el kiosco: login con `caja1`, venta mixta, salen 3 comandas con "Caja 1" | |
-| 4.4 (manual) | Se reinicia el kiosco y sigue con la sesión iniciada | |
-| 4.5 (manual) | Con la sesión vencida a propósito, va al login y al volver el carrito sigue | |
+| 4.1 | `/api/me/` devuelve el rol y la caja correctos para `caja1` y para el administrador | ✅ (falla sin cambio ✔) `LoginYSesionTests`; también cajero sin caja y usuario sin rol |
+| 4.2 | La sesión dura lo que dice D5 | ✅ (falla sin cambio ✔) `SESSION_COOKIE_AGE` = 604800 y la sesión creada por el login vence a los 7 días. Suite completa 65 OK |
+| 4.3 (manual) | En el kiosco: login con `caja1`, venta mixta, salen 3 comandas con "Caja 1" | ⏳ pendiente de Rafael en el kiosco real (necesita impresoras). Pre-chequeo automático en navegador: login, caja tomada del usuario, `?pdv=` ignorado, guardar un pedido con CSRF queda en la caja del usuario ✅ 2026-10-24 |
+| 4.4 (manual) | Se reinicia el kiosco y sigue con la sesión iniciada | ⏳ pendiente de Rafael. Pre-chequeo automático (reiniciar Edge con el mismo perfil) ✅ 2026-10-24 |
+| 4.5 (manual) | Con la sesión vencida a propósito, va al login y al volver el carrito sigue | ⏳ pendiente de Rafael. Pre-chequeo automático (sesión borrada en el servidor, GUARDAR → login → ticket de 3 productos recuperado; otro usuario no lo hereda) ✅ 2026-10-24 |
 
 ---
 

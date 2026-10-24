@@ -29,11 +29,15 @@
                 <span class="sidebar-icon">&#128424;</span> <span id="btn-printer-label">Impresora</span>
                 <span id="btn-printer-name" style="display:block;font-size:0.75rem;color:var(--text-light);margin-top:2px"></span>
             </button>
-            <button class="sidebar-item" onclick="toggleSidebar();toggleDashboard()">
+            <button class="sidebar-item" id="btn-tablero" onclick="toggleSidebar();toggleDashboard()">
                 <span class="sidebar-icon">&#128202;</span> Tablero
             </button>
-            <button class="sidebar-item" onclick="toggleSidebar();selectPDV()">
+            <button class="sidebar-item" id="btn-cambiar-pdv" onclick="toggleSidebar();selectPDV()">
                 <span class="sidebar-icon">&#128188;</span> Cambiar PDV
+            </button>
+            <button class="sidebar-item" onclick="toggleSidebar();cerrarSesion()">
+                <span class="sidebar-icon">&#128274;</span> Salir
+                <span id="sidebar-usuario" style="display:block;font-size:0.75rem;color:var(--text-light);margin-top:2px"></span>
             </button>
         </div>
     </div>

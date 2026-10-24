@@ -12,10 +12,13 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Evento, LineaPedido, Pago, Pedido, Producto, PuntoVenta
-from .permisos import CajeroLeeAdminEscribe, EsAdmin, EsCajeroOAdmin, caja_restringida, exigir_pedido_de_su_caja
+from .permisos import (
+    CajeroLeeAdminEscribe, EsAdmin, EsCajeroOAdmin, caja_restringida, es_admin, es_cajero, exigir_pedido_de_su_caja,
+)
 from .serializers import (
     PedidoCreateSerializer,
     PedidoDetailSerializer,
@@ -653,3 +656,22 @@ def pdvs_list(request):
     from .serializers import PuntoVentaSerializer
     serializer = PuntoVentaSerializer(pdvs, many=True)
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])  # a propósito sin rol: el frontend usa esto para explicarle al usuario sin rol por qué no puede operar
+def me(request):
+    user = request.user
+    caja = None
+    if es_admin(user):
+        rol = 'admin'
+    elif es_cajero(user):
+        rol = 'cajero'
+        caja = PuntoVenta.objects.filter(usuario=user).first()
+    else:
+        rol = None
+    return Response({
+        'username': user.get_username(),
+        'rol': rol,
+        'caja': {'id': caja.id, 'nombre': caja.nombre} if caja else None,
+    })
